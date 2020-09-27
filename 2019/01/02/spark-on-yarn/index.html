@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="spark, yarn,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言为了更好的管理集群资源，一般都会有资源管理调度器，所有的服务都需要服从调度器的安排才能运行。Hadoop 集群内置了 Yarn 资源管理器，而 Spark 处理的数据一般存储在 Hadoop 里，所以 Spark 也支持运行在 Yarn 上面。本篇会介绍 Spark 是如何运行在 Yarn 上的。 Yarn 运行程序Yarn 作为一个框架，包含了多个组件。如果想在 Yarn 上运行程序，需要先">
+<meta name="keywords" content="spark, yarn">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spark 运行在Yarn上的原理">
+<meta property="og:url" content="https://zhmin.github.io/2019/01/02/spark-on-yarn/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言为了更好的管理集群资源，一般都会有资源管理调度器，所有的服务都需要服从调度器的安排才能运行。Hadoop 集群内置了 Yarn 资源管理器，而 Spark 处理的数据一般存储在 Hadoop 里，所以 Spark 也支持运行在 Yarn 上面。本篇会介绍 Spark 是如何运行在 Yarn 上的。 Yarn 运行程序Yarn 作为一个框架，包含了多个组件。如果想在 Yarn 上运行程序，需要先">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://zhmin.github.io/2019/01/02/spark-on-yarn/yarn-application-flow.svg">
+<meta property="og:image" content="https://zhmin.github.io/2019/01/02/spark-on-yarn/spark-on-yarn-rpc.svg">
+<meta property="og:updated_time" content="2020-09-25T07:23:14.892Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Spark 运行在Yarn上的原理">
+<meta name="twitter:description" content="前言为了更好的管理集群资源，一般都会有资源管理调度器，所有的服务都需要服从调度器的安排才能运行。Hadoop 集群内置了 Yarn 资源管理器，而 Spark 处理的数据一般存储在 Hadoop 里，所以 Spark 也支持运行在 Yarn 上面。本篇会介绍 Spark 是如何运行在 Yarn 上的。 Yarn 运行程序Yarn 作为一个框架，包含了多个组件。如果想在 Yarn 上运行程序，需要先">
+<meta name="twitter:image" content="https://zhmin.github.io/2019/01/02/spark-on-yarn/yarn-application-flow.svg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2019/01/02/spark-on-yarn/">
+
+
+
+
+
+  <title>Spark 运行在Yarn上的原理 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2019/01/02/spark-on-yarn/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">Spark 运行在Yarn上的原理</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2019-01-02T20:10:01+08:00">
+                2019-01-02
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/spark/" itemprop="url" rel="index">
+                    <span itemprop="name">spark</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/01/02/spark-on-yarn/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/01/02/spark-on-yarn/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2019/01/02/spark-on-yarn/" class="leancloud_visitors" data-flag-title="Spark 运行在Yarn上的原理">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>为了更好的管理集群资源，一般都会有资源管理调度器，所有的服务都需要服从调度器的安排才能运行。Hadoop 集群内置了 Yarn 资源管理器，而 Spark 处理的数据一般存储在 Hadoop 里，所以 Spark 也支持运行在 Yarn 上面。本篇会介绍 Spark 是如何运行在 Yarn 上的。</p>
+<h2 id="Yarn-运行程序"><a href="#Yarn-运行程序" class="headerlink" title="Yarn 运行程序"></a>Yarn 运行程序</h2><p>Yarn 作为一个框架，包含了多个组件。如果想在 Yarn 上运行程序，需要先了解它的运行流程。</p>
+<p><img src="/2019/01/02/spark-on-yarn/yarn-application-flow.svg"></p>
+<h2 id="Spark-Rpc-服务"><a href="#Spark-Rpc-服务" class="headerlink" title="Spark Rpc 服务"></a>Spark Rpc 服务</h2><p>Spark运行在Yarn上，会涉及到下列Rpc 服务</p>
+<p><img src="/2019/01/02/spark-on-yarn/spark-on-yarn-rpc.svg"></p>
+<ul>
+<li>YarnDriverEndpoint， 代表着 driver 端，它继承 DriverEndpoint， 负责分配任务和日志收集。</li>
+<li>CoarseGrainedExecutorBackend， 表示 Executor 进程，负责执行由 Driver 端分配的任务。</li>
+<li>YarnSchedulerEndpoint， DriverEndpoint 和 AMEndpoint沟通的桥梁</li>
+<li>AMEndpoint， 运行在 ApplicationMaster 进程上，主要负责 Yarn 的资源请求</li>
+</ul>
+<p>注意到 YarnDriverEndpoint 和 YarnSchedulerEndpoint 总是运行在同一个进程里，这里简称为 driver 端。根据进程所在的位置，分为两种运行模式：</p>
+<ul>
+<li>client 模式，此进程运行在 Client。</li>
+<li>cluster 模式，此进程运行在 ApplicationMaster 。</li>
+</ul>
+<h2 id="ApplicationMaster-运行原理"><a href="#ApplicationMaster-运行原理" class="headerlink" title="ApplicationMaster 运行原理"></a>ApplicationMaster 运行原理</h2><h3 id="AMEndpoint-启动"><a href="#AMEndpoint-启动" class="headerlink" title="AMEndpoint 启动"></a>AMEndpoint 启动</h3><p>因为 ApplicationMaster 进程运行的所在 Container 是随机分配的，所以 driver 端并不知道 AMEndpoint 的地址。AMEndpoint 在启动之后，会主动发送自己的地址给 YarnSchedulerEndpoint，两者之间就可以通过顺利通信了。</p>
+<h3 id="client模式"><a href="#client模式" class="headerlink" title="client模式"></a>client模式</h3><p>client模式下，ApplicationMaster 进程仅仅运行 AMEndpoint 的服务。因为 driver 端服务在 Client 进程上，所以 AMEndpoint 必须远程请求。在启动 ApplicationMaster 进程时候，Spark 已经将 driver 端的地址，通过 Main 函数的参数传递过来了。AMEndpoint 会不停的重试连接driver 端，才会进行下一步操作。</p>
+<h3 id="cluster模式"><a href="#cluster模式" class="headerlink" title="cluster模式"></a>cluster模式</h3><p>cluster模式下，ApplicationMaster 进程运行多个服务，dirver 服务和 AMEndpoint 服务。ApplicationMaster 进程会先启动 driver 服务完成 SparkContext 的初始化后，才会启动 AMEndpoint 服务。</p>
+<h2 id="Container-启动"><a href="#Container-启动" class="headerlink" title="Container 启动"></a>Container 启动</h2><h3 id="请求资源大小"><a href="#请求资源大小" class="headerlink" title="请求资源大小"></a>请求资源大小</h3><p>AMEndpoint 启动后，当接收到了 driver 端的请求，就会向 ResourceManager 申请资源。每个 Container 申请的资源分为 cpu 和内存大小两个方面：</p>
+<p>CPU 的数量由配置项 spark.executor.cores 指定。</p>
+<p>内存大小 = 初始内存 + 额外内存。初始内存由配置项spark.executor.memory指定。 额外内存由 spark.yarn.executor.memoryOverhead 配置项指定，如果没有指定，那么就取值为初始内存大小的 10%，但是大小必须大于 384MB。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 初始内存，由配置项spark.executor.memory指定，默认为1GB</span></span><br><span class="line"><span class="keyword">protected</span> <span class="keyword">val</span> executorMemory = sparkConf.get(<span class="type">EXECUTOR_MEMORY</span>).toInt</span><br><span class="line"></span><br><span class="line"><span class="comment">// 计算额外内存大小</span></span><br><span class="line"><span class="comment">// EXECUTOR_MEMORY_OVERHEAD 表示配置项 spark.yarn.executor.memoryOverhead</span></span><br><span class="line"><span class="comment">// MEMORY_OVERHEAD_FACTOR 等于 0.1</span></span><br><span class="line"><span class="comment">// MEMORY_OVERHEAD_MIN 等于 384</span></span><br><span class="line"><span class="keyword">protected</span> <span class="keyword">val</span> memoryOverhead: <span class="type">Int</span> = sparkConf.get(<span class="type">EXECUTOR_MEMORY_OVERHEAD</span>).getOrElse(</span><br><span class="line">  math.max((<span class="type">MEMORY_OVERHEAD_FACTOR</span> * executorMemory).toInt, <span class="type">MEMORY_OVERHEAD_MIN</span>)).toInt</span><br><span class="line"></span><br><span class="line"><span class="comment">// 内存大小等于初始内存加上额外内存</span></span><br><span class="line"><span class="keyword">private</span>[yarn] <span class="keyword">val</span> resource = <span class="type">Resource</span>.newInstance(executorMemory + memoryOverhead, executorCores)</span><br></pre></td></tr></table></figure>
+<p>这里需要注意下，Yarn 的资源分配有最小单位。假设 spark 申请的 container 资源为 初始内存 1GB + 额外内存 384MB，并且 Yarn 的最小单位为1GB，那么Yarn 会分配两个单位的资源，也就是2GB 的内存。所以我们在优化资源分配时，必须考虑到额外内存，避免内存的浪费（虽然多余的内存都会被用于本地内存，但是也许我们不会用到这么多本地内存）。关于为什么会需要额外内存，这和 jvm 内存模型有关，下面会详细介绍。</p>
+<h3 id="启动命令"><a href="#启动命令" class="headerlink" title="启动命令"></a>启动命令</h3><p>负责生成命令的源码简略如下：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="function"><span class="keyword">def</span> <span class="title">prepareCommand</span></span>(): <span class="type">List</span>[<span class="type">String</span>] = &#123;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">val</span> commands = prefixEnv ++</span><br><span class="line">      <span class="type">Seq</span>(<span class="type">Environment</span>.<span class="type">JAVA_HOME</span>.$$() + <span class="string">"/bin/java"</span>, <span class="string">"-server"</span>) ++</span><br><span class="line">      <span class="comment">// java运行的jvm参数</span></span><br><span class="line">      javaOpts ++</span><br><span class="line">      <span class="comment">// java运行的Main函数所在的类</span></span><br><span class="line">      <span class="type">Seq</span>(<span class="string">"org.apache.spark.executor.CoarseGrainedExecutorBackend"</span>,</span><br><span class="line">        <span class="string">"--driver-url"</span>, masterAddress,</span><br><span class="line">        <span class="string">"--executor-id"</span>, executorId,</span><br><span class="line">        <span class="string">"--hostname"</span>, hostname,</span><br><span class="line">        <span class="string">"--cores"</span>, executorCores.toString,</span><br><span class="line">        <span class="string">"--app-id"</span>, appId) ++</span><br><span class="line">      <span class="comment">// 用户指定的jar包</span></span><br><span class="line">      userClassPath ++</span><br><span class="line">      <span class="comment">// 指定标准输出和错误输出</span></span><br><span class="line">      <span class="type">Seq</span>(</span><br><span class="line">        <span class="string">s"1&gt;<span class="subst">$&#123;ApplicationConstants.LOG_DIR_EXPANSION_VAR&#125;</span>/stdout"</span>,</span><br><span class="line">        <span class="string">s"2&gt;<span class="subst">$&#123;ApplicationConstants.LOG_DIR_EXPANSION_VAR&#125;</span>/stderr"</span>)</span><br><span class="line"></span><br><span class="line">    commands.map(s =&gt; <span class="keyword">if</span> (s == <span class="literal">null</span>) <span class="string">"null"</span> <span class="keyword">else</span> s).toList</span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
+<p>这里可以看到container的启动，是运行了 java 命令，启动类是org.apache.spark.executor.CoarseGrainedExecutorBackend，启动参数包含了 driver 端的地址，execuor id 等等，还指定了 jvm 运行参数。jvm 运行参数包括使用 server 模式的 gc 回收器，并且指定了堆的最大值为申请的初始内存。比如以上面的申请为例，它的堆最大值为1GB。</p>
+<p>我们知道 jvm 运行时，将该进程的内存分为 jvm 管理的内存和不受管理的本地内存。而 jvm 管理的内存分为堆，栈等多块，其中很大部分是由堆占用，jvm 支持堆内存的大小限制。而本地内存不受 jvm 控制，它属于操作系统管理，操作系统一般不对进程使用的内存做限制，除非超过了物理机的容量。但是它受到 Yarn 的控制，如果进程用的内存超标，就会被 Yarn 杀死。</p>
+<p>spark 申请的初始内存只被用在堆上，所以还需要额外内存来用于其他地方，比如 jvm 管理的栈，和本地内存。spark 会用到本地内存来存储数据，或接收远端传来的 shuffle 数据。所以当 shuffle 数据较大时，可能造成本地内存过大，造成被 Yarn 杀死。这时你可以看到一条日志，意思是让你提高额外内存的大小，其实也就是提高本地内存的原理。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/spark-yarn/" rel="tag"># spark, yarn</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2018/12/28/datax-job/" rel="next" title="Datax 任务分配原理">
+                <i class="fa fa-chevron-left"></i> Datax 任务分配原理
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/01/03/spark-rdd-dependency/" rel="prev" title="Spark RDD之间的依赖">
+                Spark RDD之间的依赖 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Yarn-运行程序"><span class="nav-number">2.</span> <span class="nav-text">Yarn 运行程序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Spark-Rpc-服务"><span class="nav-number">3.</span> <span class="nav-text">Spark Rpc 服务</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ApplicationMaster-运行原理"><span class="nav-number">4.</span> <span class="nav-text">ApplicationMaster 运行原理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#AMEndpoint-启动"><span class="nav-number">4.1.</span> <span class="nav-text">AMEndpoint 启动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#client模式"><span class="nav-number">4.2.</span> <span class="nav-text">client模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cluster模式"><span class="nav-number">4.3.</span> <span class="nav-text">cluster模式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Container-启动"><span class="nav-number">5.</span> <span class="nav-text">Container 启动</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#请求资源大小"><span class="nav-number">5.1.</span> <span class="nav-text">请求资源大小</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#启动命令"><span class="nav-number">5.2.</span> <span class="nav-text">启动命令</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

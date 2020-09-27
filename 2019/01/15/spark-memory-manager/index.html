@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="spark, memory,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言spark自己实现了一套内存的管理，为了精准的控制内存。因为JVM的垃圾回收不可控制，尤其是大内存的回收，会造成程序暂停长时间。spark为了避免这种情况，实现了内存的管理，尤其是针对大内存。对于大内存，spark会使用内存池的方法，避免了垃圾回收的次数，提高了程序的稳定性。目前spark支持堆内内存分配和堆外内存分配。 内存分配内存块spark分配内存是以内存块为单位的，内存块由Memory">
+<meta name="keywords" content="spark, memory">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spark 内存管理">
+<meta property="og:url" content="https://zhmin.github.io/2019/01/15/spark-memory-manager/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言spark自己实现了一套内存的管理，为了精准的控制内存。因为JVM的垃圾回收不可控制，尤其是大内存的回收，会造成程序暂停长时间。spark为了避免这种情况，实现了内存的管理，尤其是针对大内存。对于大内存，spark会使用内存池的方法，避免了垃圾回收的次数，提高了程序的稳定性。目前spark支持堆内内存分配和堆外内存分配。 内存分配内存块spark分配内存是以内存块为单位的，内存块由Memory">
+<meta property="og:locale" content="default">
+<meta property="og:updated_time" content="2020-09-25T10:19:21.187Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Spark 内存管理">
+<meta name="twitter:description" content="前言spark自己实现了一套内存的管理，为了精准的控制内存。因为JVM的垃圾回收不可控制，尤其是大内存的回收，会造成程序暂停长时间。spark为了避免这种情况，实现了内存的管理，尤其是针对大内存。对于大内存，spark会使用内存池的方法，避免了垃圾回收的次数，提高了程序的稳定性。目前spark支持堆内内存分配和堆外内存分配。 内存分配内存块spark分配内存是以内存块为单位的，内存块由Memory">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2019/01/15/spark-memory-manager/">
+
+
+
+
+
+  <title>Spark 内存管理 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2019/01/15/spark-memory-manager/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">Spark 内存管理</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2019-01-15T22:50:44+08:00">
+                2019-01-15
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/spark/" itemprop="url" rel="index">
+                    <span itemprop="name">spark</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/01/15/spark-memory-manager/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/01/15/spark-memory-manager/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2019/01/15/spark-memory-manager/" class="leancloud_visitors" data-flag-title="Spark 内存管理">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>spark自己实现了一套内存的管理，为了精准的控制内存。因为JVM的垃圾回收不可控制，尤其是大内存的回收，会造成程序暂停长时间。spark为了避免这种情况，实现了内存的管理，尤其是针对大内存。对于大内存，spark会使用内存池的方法，避免了垃圾回收的次数，提高了程序的稳定性。目前spark支持堆内内存分配和堆外内存分配。</p>
+<h2 id="内存分配"><a href="#内存分配" class="headerlink" title="内存分配"></a>内存分配</h2><h3 id="内存块"><a href="#内存块" class="headerlink" title="内存块"></a>内存块</h3><p>spark分配内存是以内存块为单位的，内存块由<code>MemoryBlock</code>表示。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryBlock</span> <span class="keyword">extends</span> <span class="title">MemoryLocation</span> </span>&#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">long</span> length;     <span class="comment">//  内存中的数据大小</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>MemoryLocation</code>表示内存地址，当需要遍历存储的字节数据时，是从<code>obj</code>的位置加上 <code>offset</code>偏移量的位置</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryLocation</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">  <span class="meta">@Nullable</span></span><br><span class="line">  Object obj;       <span class="comment">// 内存的起始地址</span></span><br><span class="line"></span><br><span class="line">  <span class="keyword">long</span> offset;     <span class="comment">// 数据的起始偏移位置</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="内存分配方式"><a href="#内存分配方式" class="headerlink" title="内存分配方式"></a>内存分配方式</h3><p>Spark 根据分配的内存位置（堆内，堆外），分为两种方式。</p>
+<ol>
+<li><code>HeapMemoryAllocator</code>类实现了堆内分配内存。</li>
+<li><code>UnsafeMemoryAllocator</code>则支持在堆外分配内存。</li>
+</ol>
+<h3 id="堆内分配"><a href="#堆内分配" class="headerlink" title="堆内分配"></a>堆内分配</h3><p><code>HeapMemoryAllocator</code>自己实现了一个缓存池，不过它只复用大尺寸的内存。可以看到当内存块大小大于1MB的时候，才会进入缓存池。那为什么仅仅对大内存才复用，因为大内存的分配和回收都更加容易会造成 jvm 的不稳定。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">HeapMemoryAllocator</span> <span class="keyword">implements</span> <span class="title">MemoryAllocator</span> </span>&#123;</span><br><span class="line">  </span><br><span class="line">  <span class="comment">// 缓存池，Key的内存块的大小，Value为内存块的弱引用</span></span><br><span class="line">  <span class="meta">@GuardedBy</span>(<span class="string">"this"</span>)</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">final</span> Map&lt;Long, LinkedList&lt;WeakReference&lt;MemoryBlock&gt;&gt;&gt; bufferPoolsBySize =</span><br><span class="line">    <span class="keyword">new</span> HashMap&lt;&gt;();</span><br><span class="line">    </span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> POOLING_THRESHOLD_BYTES = <span class="number">1024</span> * <span class="number">1024</span>;</span><br><span class="line">    </span><br><span class="line">  <span class="comment">// 这里倾向于缓存大的内存块，因为大的内存块回收，会很影响jvm的性能</span></span><br><span class="line">  <span class="function"><span class="keyword">private</span> <span class="keyword">boolean</span> <span class="title">shouldPool</span><span class="params">(<span class="keyword">long</span> size)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> size &gt;= POOLING_THRESHOLD_BYTES;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里还需要注意到缓存池，它使用弱引用来保存<code>MemoryBlock</code>。这样的好处时，当内存不足时，jvm 会自动清除那些没有用的<code>MemoryBlock</code>，而不需要我们额外的处理。</p>
+<p><code>HeapMemoryAllocator</code>使用<code>long</code>数组来表示<code>MemoryBlock</code>的，所以分配内存时，会计算long的数组大小。</p>
+<h3 id="堆外分配"><a href="#堆外分配" class="headerlink" title="堆外分配"></a>堆外分配</h3><p><code>UnsafeMemoryAllocator</code>负责分配堆外内存，它的原理非常简单。仅仅是调用<code>Unsafe.allocateMemory</code>方法进行分配，调用<code>Unsafe.freeMemory</code>方法进行释放。这里需要注意下它返回的<code>MemoryBlock</code>的<code>object</code>为 null，表示堆外内存。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">UnsafeMemoryAllocator</span> <span class="keyword">implements</span> <span class="title">MemoryAllocator</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">  <span class="meta">@Override</span></span><br><span class="line">  <span class="function"><span class="keyword">public</span> MemoryBlock <span class="title">allocate</span><span class="params">(<span class="keyword">long</span> size)</span> <span class="keyword">throws</span> OutOfMemoryError </span>&#123;</span><br><span class="line">    <span class="comment">// Platform 使用 unsafe分配堆外内存， 返回内存地址</span></span><br><span class="line">    <span class="keyword">long</span> address = Platform.allocateMemory(size);</span><br><span class="line">    MemoryBlock memory = <span class="keyword">new</span> MemoryBlock(<span class="keyword">null</span>, address, size);</span><br><span class="line">    <span class="keyword">return</span> memory;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="内存池"><a href="#内存池" class="headerlink" title="内存池"></a>内存池</h2><p>内存池负责管理内存的使用量，它只负责管理内存总大小，已使用内存的大小这些数值，由抽象类<code>MemoryPool</code>表示。</p>
+<p>内存池根据用途分为两种，</p>
+<ul>
+<li>一个是用作存储的，由<code>StorageMemoryPool</code>表示</li>
+<li>一部分用作执行任务的，由<code>ExecutionMemoryPool</code>表示</li>
+</ul>
+<p>这里需要提下内存池只是负责管理内存容量，并不会实际的分配内存。至于为什么要这样设计，是因为并发的原因。内存池的操作都使用了锁，支持多线程运行，并且内存的分配是相对耗时的，所以为了减少锁的占用时间，就将耗时的内存操作移到外面了。</p>
+<h3 id="数据存储内存池"><a href="#数据存储内存池" class="headerlink" title="数据存储内存池"></a>数据存储内存池</h3><p><code>StorageMemoryPool</code> 继承 <code>MemoryPool</code>，用来存储数据的内存池。 它支持堆外和堆内内存，由<code>memoryMode</code>参数指定。当用户需要申请内存时，需要提供 blockId，用于标识数据。</p>
+<p>它的原理也很简单，如果该<code>MemoryPool</code>的内存足够，那么会更新<code>MemoryPool</code>的已使用内存的数值。真正的分配是由客户端自己提供。如果内存不足，它会试着将之前的 block 放入磁盘存储。</p>
+<h3 id="任务执行内存池"><a href="#任务执行内存池" class="headerlink" title="任务执行内存池"></a>任务执行内存池</h3><p><code>ExecutionMemoryPool</code>继承 <code>MemoryPool</code>， 表示用来执行任务的内存池。它支持堆外和堆内内存，由<code>memoryMode</code>参数指定。当用户需要申请内存时，需要提供 taskId，用于表示此次任务。</p>
+<p><code>ExecutionMemoryPool</code>的原理相对复杂一些，它涉及到了借的概念。我们知道程序运行是需要占用内存的，它的优先级是比数据存储还要高。所以当执行内存不足时，它会尝试从数据存储内存池里面借一些使用。</p>
+<p><code>ExecutionMemoryPool</code>在申请内存时，需要提供两个函数。</p>
+<ol>
+<li><code>maybeGrowPool</code>函数，负责动态提升内存的总大小。</li>
+<li><code>computeMaxPoolSize</code>函数，负责内存池的大小，通过它可以实现内存的借和还。</li>
+</ol>
+<h2 id="内存池管理策略"><a href="#内存池管理策略" class="headerlink" title="内存池管理策略"></a>内存池管理策略</h2><p><code>MemoryManager</code> 负责管理下面四个内存池</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span>[spark] <span class="keyword">abstract</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryManager</span>(<span class="params"></span></span></span><br><span class="line"><span class="class"><span class="params">    conf: <span class="type">SparkConf</span>,</span></span></span><br><span class="line"><span class="class"><span class="params">    numCores: <span class="type">Int</span>,</span></span></span><br><span class="line"><span class="class"><span class="params">    onHeapStorageMemory: <span class="type">Long</span>,</span></span></span><br><span class="line"><span class="class"><span class="params">    onHeapExecutionMemory: <span class="type">Long</span></span>) <span class="keyword">extends</span> <span class="title">Logging</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">  <span class="meta">@GuardedBy</span>(<span class="string">"this"</span>)</span><br><span class="line">  <span class="keyword">protected</span> <span class="keyword">val</span> onHeapStorageMemoryPool = <span class="keyword">new</span> <span class="type">StorageMemoryPool</span>(<span class="keyword">this</span>, <span class="type">MemoryMode</span>.<span class="type">ON_HEAP</span>)  <span class="comment">// 堆内数据存储</span></span><br><span class="line">  <span class="meta">@GuardedBy</span>(<span class="string">"this"</span>)</span><br><span class="line">  <span class="keyword">protected</span> <span class="keyword">val</span> offHeapStorageMemoryPool = <span class="keyword">new</span> <span class="type">StorageMemoryPool</span>(<span class="keyword">this</span>, <span class="type">MemoryMode</span>.<span class="type">OFF_HEAP</span>)  <span class="comment">// 堆外数据存储</span></span><br><span class="line">  <span class="meta">@GuardedBy</span>(<span class="string">"this"</span>)</span><br><span class="line">  <span class="keyword">protected</span> <span class="keyword">val</span> onHeapExecutionMemoryPool = <span class="keyword">new</span> <span class="type">ExecutionMemoryPool</span>(<span class="keyword">this</span>, <span class="type">MemoryMode</span>.<span class="type">ON_HEAP</span>)  <span class="comment">// 堆内任务执行</span></span><br><span class="line">  <span class="meta">@GuardedBy</span>(<span class="string">"this"</span>)</span><br><span class="line">  <span class="keyword">protected</span> <span class="keyword">val</span> offHeapExecutionMemoryPool = <span class="keyword">new</span> <span class="type">ExecutionMemoryPool</span>(<span class="keyword">this</span>, <span class="type">MemoryMode</span>.<span class="type">OFF_HEAP</span>)  <span class="comment">// 堆外任务执行</span></span><br><span class="line">    </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>MemoryManager</code>的构造函数，指定了堆内数据存储内存池的大小，和堆内任务执行内存池的大小。至于堆外的内存池大小如下所示：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// MEMORY_OFFHEAP_SIZE 表示 spark.memory.offHeap.size 配置，表示堆外的总大小</span></span><br><span class="line"><span class="keyword">protected</span>[<span class="keyword">this</span>] <span class="keyword">val</span> maxOffHeapMemory = conf.get(<span class="type">MEMORY_OFFHEAP_SIZE</span>)</span><br><span class="line"><span class="comment">// spark.memory.storageFraction 指定存储占用的比例</span></span><br><span class="line"><span class="keyword">protected</span>[<span class="keyword">this</span>] <span class="keyword">val</span> offHeapStorageMemory = (maxOffHeapMemory * conf.getDouble(<span class="string">"spark.memory.storageFraction"</span>, <span class="number">0.5</span>)).toLong</span><br><span class="line"><span class="comment">// 设置堆外内存池的大小</span></span><br><span class="line">offHeapExecutionMemoryPool.incrementPoolSize(maxOffHeapMemory - offHeapStorageMemory)</span><br><span class="line">offHeapStorageMemoryPool.incrementPoolSize(offHeapStorageMemory)</span><br></pre></td></tr></table></figure>
+<p>Spark 支持两种管理策略来平衡各个内存池的大小，静态资源管理和动态资源管理。</p>
+<h3 id="静态资源管理"><a href="#静态资源管理" class="headerlink" title="静态资源管理"></a>静态资源管理</h3><p>静态资源管理不支持堆外数据存储，它只管理三个内存池。在开始的时候，它会初始化各个内存池的大小，之后内存池的大小不能改变，也就是说内存池之间是不能相互借用的。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span>[spark] <span class="class"><span class="keyword">object</span> <span class="title">StaticMemoryManager</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">val</span> <span class="type">MIN_MEMORY_BYTES</span> = <span class="number">32</span> * <span class="number">1024</span> * <span class="number">1024</span>  <span class="comment">// 32MB</span></span><br><span class="line"></span><br><span class="line">  <span class="comment">// 返回堆内存储数据的内存池容量</span></span><br><span class="line">  <span class="keyword">private</span> <span class="function"><span class="keyword">def</span> <span class="title">getMaxStorageMemory</span></span>(conf: <span class="type">SparkConf</span>): <span class="type">Long</span> = &#123;</span><br><span class="line">    <span class="keyword">val</span> systemMaxMemory = conf.getLong(<span class="string">"spark.testing.memory"</span>, <span class="type">Runtime</span>.getRuntime.maxMemory)</span><br><span class="line">    <span class="keyword">val</span> memoryFraction = conf.getDouble(<span class="string">"spark.storage.memoryFraction"</span>, <span class="number">0.6</span>)</span><br><span class="line">    <span class="keyword">val</span> safetyFraction = conf.getDouble(<span class="string">"spark.storage.safetyFraction"</span>, <span class="number">0.9</span>)</span><br><span class="line">    (systemMaxMemory * memoryFraction * safetyFraction).toLong</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 返回堆内执行任务使用的内存池容量</span></span><br><span class="line">  <span class="keyword">private</span> <span class="function"><span class="keyword">def</span> <span class="title">getMaxExecutionMemory</span></span>(conf: <span class="type">SparkConf</span>): <span class="type">Long</span> = &#123;</span><br><span class="line">    <span class="keyword">val</span> systemMaxMemory = conf.getLong(<span class="string">"spark.testing.memory"</span>, <span class="type">Runtime</span>.getRuntime.maxMemory)</span><br><span class="line">    <span class="keyword">val</span> memoryFraction = conf.getDouble(<span class="string">"spark.shuffle.memoryFraction"</span>, <span class="number">0.2</span>)</span><br><span class="line">    <span class="keyword">val</span> safetyFraction = conf.getDouble(<span class="string">"spark.shuffle.safetyFraction"</span>, <span class="number">0.8</span>)</span><br><span class="line">    (systemMaxMemory * memoryFraction * safetyFraction).toLong</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因为静态资源管理不支持堆外数据存储，所以它会将堆外的内存都放入到堆外的执行内存池里。</p>
+<h3 id="动态资源管理"><a href="#动态资源管理" class="headerlink" title="动态资源管理"></a>动态资源管理</h3><p>动态资源管理的原理是，不严格划分缓存数据和任务执行的内存容量。存储内存池和执行内存池相互可以借用，这样就可以提高内存的使用效率。它的内存池初始化如下所示：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">val</span> <span class="type">RESERVED_SYSTEM_MEMORY_BYTES</span> = <span class="number">300</span> * <span class="number">1024</span> * <span class="number">1024</span>  <span class="comment">// 300MB 的保留内存</span></span><br><span class="line"><span class="keyword">val</span> systemMemory = <span class="type">Runtime</span>.getRuntime.maxMemory <span class="comment">// 计算Jvm的内存总量</span></span><br><span class="line"><span class="keyword">val</span> usableMemory = systemMemory - <span class="type">RESERVED_SYSTEM_MEMORY_BYTES</span>  <span class="comment">// 出去保留内存，可以使用的内存大小</span></span><br><span class="line"><span class="keyword">val</span> memoryFraction = conf.getDouble(<span class="string">"spark.memory.fraction"</span>, <span class="number">0.6</span>)</span><br><span class="line"><span class="keyword">val</span> maxMemory = (usableMemory * memoryFraction).toLong <span class="comment">// 用于堆内内存池的大小，为60%</span></span><br><span class="line"><span class="keyword">val</span> onHeapStorageRegionSize = (maxMemory * conf.getDouble(<span class="string">"spark.memory.storageFraction"</span>, <span class="number">0.5</span>)).toLong <span class="comment">// 堆内存储内存为50%</span></span><br><span class="line"><span class="keyword">val</span> onHeapExecutionMemory = maxMemory - onHeapStorageRegionSize</span><br></pre></td></tr></table></figure>
+<p>用户申请存储内存时，如果当前内存池不够，则会向运行内存池借用。</p>
+<p>用户申请运行内存时，如果当前内存池不够，则会向存储内存池借用。因为运行内存的优先级高，还会进一步会要求存储内存池持久化它的block，来获得空闲空间。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 借用storage内存</span></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">maybeGrowExecutionPool</span></span>(extraMemoryNeeded: <span class="type">Long</span>): <span class="type">Unit</span> = &#123;</span><br><span class="line">    <span class="keyword">if</span> (extraMemoryNeeded &gt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">// 如果storage内存池有空闲内存，</span></span><br><span class="line">        <span class="comment">// 或者storage内存池的容量大于最低容量storageRegionSize</span></span><br><span class="line">        <span class="keyword">val</span> memoryReclaimableFromStorage = math.max(</span><br><span class="line">            storagePool.memoryFree,</span><br><span class="line">            storagePool.poolSize - storageRegionSize)</span><br><span class="line">        <span class="keyword">if</span> (memoryReclaimableFromStorage &gt; <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="comment">// 尝试释放空间，有可能会将缓存的数据块，溢写到磁盘</span></span><br><span class="line">            <span class="keyword">val</span> spaceToReclaim = storagePool.freeSpaceToShrinkPool(</span><br><span class="line">                math.min(extraMemoryNeeded, memoryReclaimableFromStorage))</span><br><span class="line">            <span class="comment">// 减少storage内存池的容量</span></span><br><span class="line">            storagePool.decrementPoolSize(spaceToReclaim)</span><br><span class="line">            <span class="comment">// 增加execution内存池的容量</span></span><br><span class="line">            executionPool.incrementPoolSize(spaceToReclaim)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 计算最大的execution的内存容量</span></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">computeMaxExecutionPoolSize</span></span>(): <span class="type">Long</span> = &#123;</span><br><span class="line">    maxMemory - math.min(storagePool.memoryUsed, storageRegionSize)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="申请内存示例"><a href="#申请内存示例" class="headerlink" title="申请内存示例"></a>申请内存示例</h2><p>上面介绍了内存的管理和分配，这里介绍了使用者的用法。我们以MemoryStore类为例，当spark缓存数据的时候，会申请storage类型的内存。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">memoryStore.putBytes(blockId, size, memoryMode, () =&gt; &#123;</span><br><span class="line">    <span class="comment">// 如果申请的是堆外内存，并且原始的数据存放在堆内，那么就需要申请堆外内存，并且执行拷贝</span></span><br><span class="line">    <span class="keyword">if</span> (memoryMode == <span class="type">MemoryMode</span>.<span class="type">OFF_HEAP</span> &amp;&amp;</span><br><span class="line">        bytes.chunks.exists(buffer =&gt; !buffer.isDirect)) &#123;</span><br><span class="line">        bytes.copy(<span class="type">Platform</span>.allocateDirectBuffer)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        bytes</span><br><span class="line">    &#125;</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p>这里需要注意下有个回调函数，用来分配内存的。再接着看<code>MemoryStore</code> 的 <code>putBytes</code> 方法。它申请内存的方法很简单，首先向memoryManager申请，如果memoryManager同意，直接调用_bytes函数，生成ChunkedByteBuffer。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MemoryStore</span> </span>&#123;</span><br><span class="line">  </span><br><span class="line">  <span class="function"><span class="keyword">def</span> <span class="title">putBytes</span></span>[<span class="type">T</span>: <span class="type">ClassTag</span>]( blockId: <span class="type">BlockId</span>, size: <span class="type">Long</span>, memoryMode: <span class="type">MemoryMode</span>, _bytes: () =&gt; <span class="type">ChunkedByteBuffer</span>): <span class="type">Boolean</span> = &#123;</span><br><span class="line">    <span class="comment">// 申请storage内存</span></span><br><span class="line">    <span class="keyword">if</span> (memoryManager.acquireStorageMemory(blockId, size, memoryMode)) &#123;</span><br><span class="line">      <span class="comment">// 生成ChunkedByteBuffer，里面存储着要缓存的数据</span></span><br><span class="line">      <span class="keyword">val</span> bytes = _bytes()</span><br><span class="line">      assert(bytes.size == size)</span><br><span class="line">      ......</span><br><span class="line">      <span class="literal">true</span></span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到用户向内存池申请时，是需要自己负责内存分配的。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/spark-memory/" rel="tag"># spark, memory</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/01/13/spark-rpc-client/" rel="next" title="Spark Rpc 客户端原理">
+                <i class="fa fa-chevron-left"></i> Spark Rpc 客户端原理
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/01/18/spark-map-output-tracker/" rel="prev" title="Spark MapOutputTracker 原理">
+                Spark MapOutputTracker 原理 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#内存分配"><span class="nav-number">2.</span> <span class="nav-text">内存分配</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#内存块"><span class="nav-number">2.1.</span> <span class="nav-text">内存块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#内存分配方式"><span class="nav-number">2.2.</span> <span class="nav-text">内存分配方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#堆内分配"><span class="nav-number">2.3.</span> <span class="nav-text">堆内分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#堆外分配"><span class="nav-number">2.4.</span> <span class="nav-text">堆外分配</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#内存池"><span class="nav-number">3.</span> <span class="nav-text">内存池</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#数据存储内存池"><span class="nav-number">3.1.</span> <span class="nav-text">数据存储内存池</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#任务执行内存池"><span class="nav-number">3.2.</span> <span class="nav-text">任务执行内存池</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#内存池管理策略"><span class="nav-number">4.</span> <span class="nav-text">内存池管理策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#静态资源管理"><span class="nav-number">4.1.</span> <span class="nav-text">静态资源管理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#动态资源管理"><span class="nav-number">4.2.</span> <span class="nav-text">动态资源管理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#申请内存示例"><span class="nav-number">5.</span> <span class="nav-text">申请内存示例</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="spark, shuffle, writer,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="Spark BypassMergeSortShuffleWriter 原理Spark的 shuffle 过程比较复杂，涉及到map端和reduce端的共同配合，这篇文章主要介绍map端的运行原理。map端的操作主要由 ShuffleWriter 实现，Shuffle Writer 有着三种不同的算法，对应于不同的情形。因为内容比较多，会分篇介绍，本篇文章先讲述最为简单的一种，适用于分区数量少，而且">
+<meta name="keywords" content="spark, shuffle, writer">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spark BypassMergeSortShuffleWriter 原理">
+<meta property="og:url" content="https://zhmin.github.io/2019/01/26/spark-shuffle-writer/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="Spark BypassMergeSortShuffleWriter 原理Spark的 shuffle 过程比较复杂，涉及到map端和reduce端的共同配合，这篇文章主要介绍map端的运行原理。map端的操作主要由 ShuffleWriter 实现，Shuffle Writer 有着三种不同的算法，对应于不同的情形。因为内容比较多，会分篇介绍，本篇文章先讲述最为简单的一种，适用于分区数量少，而且">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://zhmin.github.io/2019/01/26/spark-shuffle-writer/spark-shuffle-bypass.svg">
+<meta property="og:updated_time" content="2020-09-27T01:34:05.295Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Spark BypassMergeSortShuffleWriter 原理">
+<meta name="twitter:description" content="Spark BypassMergeSortShuffleWriter 原理Spark的 shuffle 过程比较复杂，涉及到map端和reduce端的共同配合，这篇文章主要介绍map端的运行原理。map端的操作主要由 ShuffleWriter 实现，Shuffle Writer 有着三种不同的算法，对应于不同的情形。因为内容比较多，会分篇介绍，本篇文章先讲述最为简单的一种，适用于分区数量少，而且">
+<meta name="twitter:image" content="https://zhmin.github.io/2019/01/26/spark-shuffle-writer/spark-shuffle-bypass.svg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2019/01/26/spark-shuffle-writer/">
+
+
+
+
+
+  <title>Spark BypassMergeSortShuffleWriter 原理 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2019/01/26/spark-shuffle-writer/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">Spark BypassMergeSortShuffleWriter 原理</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2019-01-26T22:58:19+08:00">
+                2019-01-26
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/spark/" itemprop="url" rel="index">
+                    <span itemprop="name">spark</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/01/26/spark-shuffle-writer/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/01/26/spark-shuffle-writer/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2019/01/26/spark-shuffle-writer/" class="leancloud_visitors" data-flag-title="Spark BypassMergeSortShuffleWriter 原理">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="Spark-BypassMergeSortShuffleWriter-原理"><a href="#Spark-BypassMergeSortShuffleWriter-原理" class="headerlink" title="Spark BypassMergeSortShuffleWriter 原理"></a>Spark BypassMergeSortShuffleWriter 原理</h2><p>Spark的 shuffle 过程比较复杂，涉及到map端和reduce端的共同配合，这篇文章主要介绍map端的运行原理。map端的操作主要由 ShuffleWriter 实现，Shuffle Writer 有着三种不同的算法，对应于不同的情形。因为内容比较多，会分篇介绍，本篇文章先讲述最为简单的一种，适用于分区数量少，而且没有聚合操作的场景。</p>
+<h2 id="原理"><a href="#原理" class="headerlink" title="原理"></a>原理</h2><p>它的原理很简单，下面的图展示了 map 端的一个分区，执行的流程</p>
+<p><img src="/2019/01/26/spark-shuffle-writer/spark-shuffle-bypass.svg" alt="spark-shuffle-bypass"></p>
+<p>它根据记录的 key ，计算出对应的 reduce 分区，存储到对应的文件中。最后会将这些文件合并成一个文件。（不太明白为什么最后需要合并这些文件，这样会造成磁盘IO，是为了减少文件数目吗）</p>
+<h2 id="文件保存"><a href="#文件保存" class="headerlink" title="文件保存"></a>文件保存</h2><h3 id="装饰流"><a href="#装饰流" class="headerlink" title="装饰流"></a>装饰流</h3><p>在深入到源码之前，我们先来看看 Spark 对于保存文件，有哪些方面的优化。Spark 使用 <code>DiskBlockObjectWriter</code>将数据写入文件，它在文件写功能之上加入了统计，压缩和序列化。设计模式采用了熟悉的装饰器模式，依次是 <code>FileOutputStream</code> ，<code>TimeTrackingOutputStream</code>， <code>ManualCloseBufferedOutputStream</code>， 压缩流， 序列化流。</p>
+<p><code>TimeTrackingOutputStream</code>增加对写花费时间的统计。</p>
+<p><code>ManualCloseBufferedOutputStream</code> 更改了 <code>close</code>方法。使用者必须调用 <code>manualClose</code>方法手动关闭。因为外层的压缩流和序列化流会经常关闭和新建，为了不影响保护底层的<code>FileOutputStream</code> 不受影响，所以重写了 <code>close</code> 方法。</p>
+<p>压缩流和序列化流在以前的文件中有讲到过。</p>
+<h3 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h3><p>我们来看看 <code>DiskBlockObjectWriter</code>的初始化，就可以很清楚这些装饰器的关系。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="function"><span class="keyword">def</span> <span class="title">initialize</span></span>(): <span class="type">Unit</span> = &#123;</span><br><span class="line">  <span class="comment">// 文件输出流</span></span><br><span class="line">  fos = <span class="keyword">new</span> <span class="type">FileOutputStream</span>(file, <span class="literal">true</span>)</span><br><span class="line">  <span class="comment">// 获取该文件的Channel，通过Channel获取写位置</span></span><br><span class="line">  channel = fos.getChannel()</span><br><span class="line">  <span class="comment">// 装饰流 TimeTrackingOutputStream， writeMetrics是作为统计使用的</span></span><br><span class="line">  ts = <span class="keyword">new</span> <span class="type">TimeTrackingOutputStream</span>(writeMetrics, fos)</span><br><span class="line">  <span class="comment">// 继承缓冲流，但是作为ManualCloseOutputStream的接口</span></span><br><span class="line">  <span class="class"><span class="keyword">class</span> <span class="title">ManualCloseBufferedOutputStream</span></span></span><br><span class="line"><span class="class">    <span class="keyword">extends</span> <span class="title">BufferedOutputStream</span>(<span class="params">ts, bufferSize</span>) <span class="keyword">with</span> <span class="title">ManualCloseOutputStream</span></span></span><br><span class="line"><span class="class">  <span class="title">mcs</span> </span>= <span class="keyword">new</span> <span class="type">ManualCloseBufferedOutputStream</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">open</span></span>(): <span class="type">DiskBlockObjectWriter</span> = &#123;</span><br><span class="line">  <span class="comment">// 通过SerializerManager装饰压缩流</span></span><br><span class="line">  bs = serializerManager.wrapStream(blockId, mcs)</span><br><span class="line">  <span class="comment">// 通过SerializerInstance装饰序列流</span></span><br><span class="line">  objOut = serializerInstance.serializeStream(bs)</span><br><span class="line">  streamOpen = <span class="literal">true</span></span><br><span class="line">  <span class="keyword">this</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意到 initialize方法只会调用一次，open方法会多次调用。因为DiskBlockObjectWriter涉及到了序列化，而序列化流是有缓存的，当每次flush序列化流后，都会关闭它，并且调用open获取新的序列化流。</p>
+<h3 id="写入文件"><a href="#写入文件" class="headerlink" title="写入文件"></a>写入文件</h3><p><code>DiskBlockObjectWriter</code>提供了write方法写数据，它的原理很简单。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">write</span></span>(key: <span class="type">Any</span>, value: <span class="type">Any</span>) &#123;</span><br><span class="line">  <span class="keyword">if</span> (!streamOpen) &#123;</span><br><span class="line">    open()</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 只是简单调用了objOut流，写入key和value</span></span><br><span class="line">  objOut.writeKey(key)</span><br><span class="line">  objOut.writeValue(value)</span><br><span class="line">  <span class="comment">// 记录写入的数据条数和字节数</span></span><br><span class="line">  recordWritten()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它还提供了<code>commitAndGet</code>方法执行 flush 操作。commitAndGet 从上一次提交开始，到此次 commit 的写入数据的文件位置信息 (起始位置，数据长度)。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">commitAndGet</span></span>(): <span class="type">FileSegment</span> = &#123;</span><br><span class="line">    <span class="keyword">if</span> (streamOpen) &#123;</span><br><span class="line">        <span class="comment">// <span class="doctag">NOTE:</span> Because Kryo doesn't flush the underlying stream we explicitly flush both the</span></span><br><span class="line">        <span class="comment">//       serializer stream and the lower level stream.</span></span><br><span class="line">        <span class="comment">// 调用objOut流的flush</span></span><br><span class="line">        objOut.flush()</span><br><span class="line">        <span class="comment">// 调用bs的flush</span></span><br><span class="line">        bs.flush()</span><br><span class="line">        <span class="comment">// 关闭objOut流</span></span><br><span class="line">        objOut.close()</span><br><span class="line">        streamOpen = <span class="literal">false</span></span><br><span class="line">        <span class="keyword">if</span> (syncWrites) &#123;</span><br><span class="line">            <span class="comment">// 调用文件sync方法，强制flush内核缓存</span></span><br><span class="line">            <span class="keyword">val</span> start = <span class="type">System</span>.nanoTime()</span><br><span class="line">            fos.getFD.sync()</span><br><span class="line">            writeMetrics.incWriteTime(<span class="type">System</span>.nanoTime() - start)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 获取文件的写位置</span></span><br><span class="line">        <span class="keyword">val</span> pos = channel.position()</span><br><span class="line">        <span class="comment">// committedPosition表示上一次commit的时候的位置</span></span><br><span class="line">        <span class="keyword">val</span> fileSegment = <span class="keyword">new</span> <span class="type">FileSegment</span>(file, committedPosition, pos - committedPosition)</span><br><span class="line">        <span class="comment">// 更新 committedPosition</span></span><br><span class="line">        committedPosition = pos</span><br><span class="line">        <span class="comment">// 更新写入字节数</span></span><br><span class="line">        writeMetrics.incBytesWritten(committedPosition - reportedPosition)</span><br><span class="line">        fileSegment</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">new</span> <span class="type">FileSegment</span>(file, committedPosition, <span class="number">0</span>)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="BypassMergeSortShuffleWriter-使用"><a href="#BypassMergeSortShuffleWriter-使用" class="headerlink" title="BypassMergeSortShuffleWriter 使用"></a>BypassMergeSortShuffleWriter 使用</h2><p><code>BypassMergeSortShuffleWriter</code>的代码很简单，这里就不再详细介绍，流程如下</p>
+<ol>
+<li>为每个 reduce 分区生成了一个<code>DiskBlockObjectWriter</code></li>
+<li>遍历每条数据，计算出对应的分区，写入到对应的文件中</li>
+<li>合并这些文件为一个整文件</li>
+<li>生成索引文件</li>
+</ol>
+<p>它在实例化<code>DiskBlockObjectWriter</code>的时候，指定了写的缓存区大小，这样可以提高磁盘吞吐量。可以通过<code>spark.shuffle.file.buffer</code>配置项指定，默认为 32KB。还有在合并文件中，使用了<code>transferTo</code>技术，避免了内核空间和用户空间的多次拷贝，可以通过<code>spark.file.transferTo</code>配置项指定，默认是开启的。</p>
+<h2 id="索引文件"><a href="#索引文件" class="headerlink" title="索引文件"></a>索引文件</h2><p>索引文件的数据格式很简单，它只是为了快速的找到 reduce 分区对应的数据位置。它可以看作是Long的数组，格式如下</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">-----------------------------------------------------------------------------------</span><br><span class="line">       Long        |        Long        |        Long         |        Long       |</span><br><span class="line">-----------------------------------------------------------------------------------</span><br><span class="line">   分区一的偏移量   |    分区二的偏移量    |     分区三的偏移量   |     分区四的偏移量</span><br><span class="line">------------------------------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+<p>IndexShuffleBlockResolver类负责创建索引文件，存储到ShuffleIndexBlock数据块中。它提供了writeIndexFileAndCommit方法创建索引。因为创建索引文件，有线程竞争。所以它会先建立临时索引文件，然后再去检查索引文件是否已经存在，并且与临时索引文件是否相同。如果一致，则删除临时索引文件。如果不一致，则会更新索引文件。writeIndexFileAndCommit方法的代码如下：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">writeIndexFileAndCommit</span></span>(</span><br><span class="line">    shuffleId: <span class="type">Int</span>,</span><br><span class="line">    mapId: <span class="type">Int</span>,</span><br><span class="line">    lengths: <span class="type">Array</span>[<span class="type">Long</span>],      <span class="comment">// 每个分区对应的数据长度</span></span><br><span class="line">    dataTmp: <span class="type">File</span>): <span class="type">Unit</span> = &#123;</span><br><span class="line">  <span class="comment">// 获取索引文件</span></span><br><span class="line">  <span class="keyword">val</span> indexFile = getIndexFile(shuffleId, mapId)</span><br><span class="line">  <span class="comment">// 新建临时索引文件</span></span><br><span class="line">  <span class="keyword">val</span> indexTmp = <span class="type">Utils</span>.tempFileWith(indexFile)</span><br><span class="line">  <span class="keyword">try</span> &#123;</span><br><span class="line">    <span class="keyword">val</span> out = <span class="keyword">new</span> <span class="type">DataOutputStream</span>(<span class="keyword">new</span> <span class="type">BufferedOutputStream</span>(<span class="keyword">new</span> <span class="type">FileOutputStream</span>(indexTmp)))</span><br><span class="line">    <span class="type">Utils</span>.tryWithSafeFinally &#123;</span><br><span class="line">      <span class="comment">// 第一个分区的偏移量肯定是从0开始的</span></span><br><span class="line">      <span class="keyword">var</span> offset = <span class="number">0</span>L</span><br><span class="line">      out.writeLong(offset)</span><br><span class="line">      <span class="comment">// 根据对应分区的数据长度，计算出偏移量</span></span><br><span class="line">      <span class="keyword">for</span> (length &lt;- lengths) &#123;</span><br><span class="line">        offset += length</span><br><span class="line">        out.writeLong(offset)</span><br><span class="line">      &#125;</span><br><span class="line">    &#125; &#123;</span><br><span class="line">      out.close()</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 获取数据文件</span></span><br><span class="line">    <span class="keyword">val</span> dataFile = getDataFile(shuffleId, mapId)</span><br><span class="line">    <span class="comment">// 使用synchronized，保证下列程序是原子性的</span></span><br><span class="line">    synchronized &#123;</span><br><span class="line">      <span class="comment">// 调用checkIndexAndDataFile方法，</span></span><br><span class="line">      <span class="comment">// 检查索引文件是否与数据文件匹配，还有是否已经存在和临时索引文件相同的索引文件</span></span><br><span class="line">      <span class="keyword">val</span> existingLengths = checkIndexAndDataFile(indexFile, dataFile, lengths.length)</span><br><span class="line">      <span class="keyword">if</span> (existingLengths != <span class="literal">null</span>) &#123;</span><br><span class="line">        <span class="comment">// 这里表示别的线程已经创建了正确的索引文件</span></span><br><span class="line">        <span class="comment">// 所以这儿需要删除临时索引文件和对应的临时数据文件</span></span><br><span class="line">        <span class="type">System</span>.arraycopy(existingLengths, <span class="number">0</span>, lengths, <span class="number">0</span>, lengths.length)</span><br><span class="line">        <span class="keyword">if</span> (dataTmp != <span class="literal">null</span> &amp;&amp; dataTmp.exists()) &#123;</span><br><span class="line">          dataTmp.delete()</span><br><span class="line">        &#125;</span><br><span class="line">        indexTmp.delete()</span><br><span class="line">      &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 这里表示没有创建正确的索引文件，所以需要删除原有索引文件和对应的数据文件</span></span><br><span class="line">        <span class="keyword">if</span> (indexFile.exists()) &#123;</span><br><span class="line">          indexFile.delete()</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">if</span> (dataFile.exists()) &#123;</span><br><span class="line">          dataFile.delete()</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 将临时索引文件重命名，为索引文件</span></span><br><span class="line">        <span class="keyword">if</span> (!indexTmp.renameTo(indexFile)) &#123;</span><br><span class="line">          <span class="keyword">throw</span> <span class="keyword">new</span> <span class="type">IOException</span>(<span class="string">"fail to rename file "</span> + indexTmp + <span class="string">" to "</span> + indexFile)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 将临时数据文件重命名，为数据文件</span></span><br><span class="line">        <span class="keyword">if</span> (dataTmp != <span class="literal">null</span> &amp;&amp; dataTmp.exists() &amp;&amp; !dataTmp.renameTo(dataFile)) &#123;</span><br><span class="line">          <span class="keyword">throw</span> <span class="keyword">new</span> <span class="type">IOException</span>(<span class="string">"fail to rename file "</span> + dataTmp + <span class="string">" to "</span> + dataFile)</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (indexTmp.exists() &amp;&amp; !indexTmp.delete()) &#123;</span><br><span class="line">      logError(<span class="string">s"Failed to delete temporary index file at <span class="subst">$&#123;indexTmp.getAbsolutePath&#125;</span>"</span>)</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p><code>BypassMergeSortShuffleHandle</code>只是适用于简单的分区场景，一般数据量不大。Spark 在存储数据时，利用了缓冲区和<code>transferTo</code>技术，来提高磁盘性能。需要注意下所有的中间数据都是在磁盘里，并没有利用内存。而且它只保证分区的正确性，而并不保证分区里的数据顺序。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/spark-shuffle-writer/" rel="tag"># spark, shuffle, writer</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/01/19/spark-executor/" rel="next" title="Spark Executor 节点运行原理">
+                <i class="fa fa-chevron-left"></i> Spark Executor 节点运行原理
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/01/28/spark-shuffle-aggregator/" rel="prev" title="Spark Shuffle 聚合原理">
+                Spark Shuffle 聚合原理 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Spark-BypassMergeSortShuffleWriter-原理"><span class="nav-number">1.</span> <span class="nav-text">Spark BypassMergeSortShuffleWriter 原理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#原理"><span class="nav-number">2.</span> <span class="nav-text">原理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#文件保存"><span class="nav-number">3.</span> <span class="nav-text">文件保存</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#装饰流"><span class="nav-number">3.1.</span> <span class="nav-text">装饰流</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#初始化"><span class="nav-number">3.2.</span> <span class="nav-text">初始化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#写入文件"><span class="nav-number">3.3.</span> <span class="nav-text">写入文件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#BypassMergeSortShuffleWriter-使用"><span class="nav-number">4.</span> <span class="nav-text">BypassMergeSortShuffleWriter 使用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#索引文件"><span class="nav-number">5.</span> <span class="nav-text">索引文件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#总结"><span class="nav-number">6.</span> <span class="nav-text">总结</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

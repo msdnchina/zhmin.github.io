@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="postgresql, buffer,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言postgresql 对于缓存池的并发控制，比较复杂。下面通过一步步的优化，来讲述 postgresql 的设计思路。它为了提升锁的性能，大量使用了 CAS 操作，只有在操作比较慢的时候，才会加入读写锁。在继续阅读之前，需要熟悉它的存储设计，可以参考这篇文章 postgresql 存储设计 。 设计思路推演首先考虑下单线程的情况，我们先要查找缓存池是否已经包含了要读取的page，如果包含了则直">
+<meta name="keywords" content="postgresql, buffer">
+<meta property="og:type" content="article">
+<meta property="og:title" content="postgresql 缓存池并发设计">
+<meta property="og:url" content="https://zhmin.github.io/2020/09/08/postgresql-buffer-concurrent/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言postgresql 对于缓存池的并发控制，比较复杂。下面通过一步步的优化，来讲述 postgresql 的设计思路。它为了提升锁的性能，大量使用了 CAS 操作，只有在操作比较慢的时候，才会加入读写锁。在继续阅读之前，需要熟悉它的存储设计，可以参考这篇文章 postgresql 存储设计 。 设计思路推演首先考虑下单线程的情况，我们先要查找缓存池是否已经包含了要读取的page，如果包含了则直">
+<meta property="og:locale" content="default">
+<meta property="og:updated_time" content="2020-09-25T01:58:36.166Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="postgresql 缓存池并发设计">
+<meta name="twitter:description" content="前言postgresql 对于缓存池的并发控制，比较复杂。下面通过一步步的优化，来讲述 postgresql 的设计思路。它为了提升锁的性能，大量使用了 CAS 操作，只有在操作比较慢的时候，才会加入读写锁。在继续阅读之前，需要熟悉它的存储设计，可以参考这篇文章 postgresql 存储设计 。 设计思路推演首先考虑下单线程的情况，我们先要查找缓存池是否已经包含了要读取的page，如果包含了则直">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2020/09/08/postgresql-buffer-concurrent/">
+
+
+
+
+
+  <title>postgresql 缓存池并发设计 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2020/09/08/postgresql-buffer-concurrent/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">postgresql 缓存池并发设计</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2020-09-08T21:08:52+08:00">
+                2020-09-08
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/postgresql/" itemprop="url" rel="index">
+                    <span itemprop="name">postgresql</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2020/09/08/postgresql-buffer-concurrent/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2020/09/08/postgresql-buffer-concurrent/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2020/09/08/postgresql-buffer-concurrent/" class="leancloud_visitors" data-flag-title="postgresql 缓存池并发设计">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>postgresql 对于缓存池的并发控制，比较复杂。下面通过一步步的优化，来讲述 postgresql 的设计思路。它为了提升锁的性能，大量使用了 CAS 操作，只有在操作比较慢的时候，才会加入读写锁。在继续阅读之前，需要熟悉它的存储设计，可以参考这篇文章 <a href="/2020/09/05/postgresql-storage-architecture/" title="postgresql 存储设计">postgresql 存储设计</a> 。</p>
+<h2 id="设计思路推演"><a href="#设计思路推演" class="headerlink" title="设计思路推演"></a>设计思路推演</h2><p>首先考虑下单线程的情况，我们先要查找缓存池是否已经包含了要读取的page，如果包含了则直接返回该 buffer。如果没有，需要从磁盘加载到缓存池中，然后返回。下面是通过一步步的加锁，来实现并发的控制。</p>
+<h3 id="Hash-表锁"><a href="#Hash-表锁" class="headerlink" title="Hash 表锁"></a>Hash 表锁</h3><p>hash 表保存了 page 到 buffer 的对应关系，很明显所有的读取都需要从 hash 表查找开始，我们可以从 控制 hash 表的锁来开始。假设现在只有 hash 分区锁，我们写的程序应该是这样的</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="comment">// 如果找到该缓存，则返回</span></span><br><span class="line">    ublock(hash_table, partition);</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"><span class="comment">// 从磁盘读取数据到缓存，并且添加到 hash 表</span></span><br><span class="line">read_from_disk(page_number, free_buffer_id);</span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h3 id="Pin-Buffer"><a href="#Pin-Buffer" class="headerlink" title="Pin Buffer"></a>Pin Buffer</h3><p>其中 find_victim_buffer 函数负责挑选出可被替换的 buffer，它的原理是找到 pin count 等于 0 的 buffer。所以这里面会有个问题，当我们查找到数据后，需要及时的 pin 操作，不然有可能会被替换掉，造成读取的数据不是想要的 page number。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="comment">// 需要及时 pin 操作</span></span><br><span class="line">    pin_buffer(buffer_id)</span><br><span class="line">    ublock(hash_table, partition);</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 及时 pin 操作</span></span><br><span class="line">pin_buffer(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"><span class="comment">// 从磁盘读取数据到缓存，并且添加到 hash 表</span></span><br><span class="line">read_from_disk(page_number, free_buffer_id);</span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h3 id="查找空闲Buffer优化"><a href="#查找空闲Buffer优化" class="headerlink" title="查找空闲Buffer优化"></a>查找空闲Buffer优化</h3><p>我们观察上述代码，如果我们没有找到对应的 buffer，那么需要从buffer数组中挑选出一个合适的，这个步骤是很花费时间的。所以会造成长时间的加锁，并且hash表的一个分区会包含了多个 buffer，这样会造成性能影响。所以 在执行这一步之前，我们可以将分区锁释放。不过这样会遇到一个问题，如下所示</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="comment">// 需要及时 pin 操作</span></span><br><span class="line">    pin_buffer(buffer_id)</span><br><span class="line">    ublock(hash_table, partition);</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放锁，防止长时间占住分区锁</span></span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 及时 pin 操作</span></span><br><span class="line">pin_buffer(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 步骤1</span></span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"><span class="comment">// 从磁盘读取数据到缓存，并且添加到 hash 表</span></span><br><span class="line">read_from_disk(page_number, free_buffer_id);</span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h3 id="避免重复读取"><a href="#避免重复读取" class="headerlink" title="避免重复读取"></a>避免重复读取</h3><p>我们假设有两个线程都跑到了 步骤1，那么就会产生两个 buffer 都是保存了同一份 Page 的数据。为了避免这一情况，我们在执行步骤1之后，需要检查一下。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="comment">// 需要及时 pin 操作</span></span><br><span class="line">    pin_buffer(buffer_id)</span><br><span class="line">    ublock(hash_table, partition);</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放锁，防止长时间占住分区锁</span></span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 及时 pin 操作</span></span><br><span class="line">pin_buffer(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 步骤1</span></span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">// 增加查看是否有别的进程已经在读取磁盘数据了</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"><span class="comment">// 从磁盘读取数据到缓存，并且添加到 hash 表</span></span><br><span class="line">read_from_disk(page_number, free_buffer_id);</span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h3 id="磁盘读取优化"><a href="#磁盘读取优化" class="headerlink" title="磁盘读取优化"></a>磁盘读取优化</h3><p>同样从磁盘读取数据的操作也会很花费时间，为了避免长时间占用锁，我们需要在执行之前释放相关的锁。如果要实现这一步，需要设置一个 valid 标记位，表示数据是否成功的被磁盘读取。所以我们在哈希表中找到缓存后，还需要分辨数据是否完成磁盘读取，并且我们还需要额外的锁（称为 io_lock），来保证同步等待。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    pin_buffer(buffer_id);</span><br><span class="line">    unlock_partition(hash_table, partition_id);</span><br><span class="line">    <span class="keyword">while</span>(! is_valid(buffer_id)) &#123;</span><br><span class="line">        wait_io_lock(buffer_id)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放锁，防止长时间占住分区锁</span></span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 及时 pin 操作</span></span><br><span class="line">pin_buffer(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 步骤1</span></span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">// 增加查看是否有别的进程已经在读取磁盘数据了</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 设置该缓存无效</span></span><br><span class="line">set_buffer_invalid(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 并且添加到 hash 表</span></span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 加锁</span></span><br><span class="line">lock_io(free_buffer_id);</span><br><span class="line"><span class="comment">// 如果该缓存已经成功读取完了，那么直接返回。</span></span><br><span class="line"><span class="keyword">while</span> (! is_valid(free_buffer_id)) &#123;</span><br><span class="line">    <span class="comment">// 否则从磁盘读取</span></span><br><span class="line">    read_from_disk(page_number, free_buffer_id);</span><br><span class="line">    set_buffer_valid(free_buffer_id);</span><br><span class="line">&#125;</span><br><span class="line">unlock_io(free_buffer_id)</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h3 id="Valid标记位"><a href="#Valid标记位" class="headerlink" title="Valid标记位"></a>Valid标记位</h3><p>现在基本的流程确定好了，不过 postgresql 认为加载磁盘是很慢的操作，是可以被终止的。所以当检测到一个 buffer 为 invalid 时，可能对应着两种情况，一种是其它进程正在进行读取，一种是之前的读取被终止了。所以当发现 buffer invalid 的时候，都需要主动去磁盘读取。但是这样会造成并发重复读取，所以还需要提供一个锁，专门负责这一块的同步，称为 io_lock。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 获取分区 id，page_number 表示要获取的 page 标识</span></span><br><span class="line">partition_id = get_hash_parition(page_number);</span><br><span class="line"><span class="comment">// 对此分区加读锁</span></span><br><span class="line">lock_partition_read(hash_table, partition_id);</span><br><span class="line"><span class="comment">// 查找该 page 是否存在缓存</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    pin_buffer(buffer_id);</span><br><span class="line">    unlock_partition(hash_table, partition_id);</span><br><span class="line">    <span class="comment">// 加锁</span></span><br><span class="line">    lock_io(free_buffer_id);</span><br><span class="line">    <span class="comment">// 如果该缓存已经成功读取完了，那么直接返回。</span></span><br><span class="line">    <span class="keyword">while</span> (! is_valid(free_buffer_id)) &#123;</span><br><span class="line">        <span class="comment">// 否则从磁盘读取</span></span><br><span class="line">        read_from_disk(page_number, free_buffer_id);</span><br><span class="line">        set_buffer_valid(free_buffer_id);</span><br><span class="line">    &#125;</span><br><span class="line">    unlock_io(free_buffer_id)</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放锁，防止长时间占住分区锁</span></span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 如果没有对应的缓存，则需要从缓存池中，找到替换的位置</span></span><br><span class="line">free_buffer_id = find_victim_buffer();</span><br><span class="line"><span class="comment">// 获取旧有位置的缓存对应哪个 page number</span></span><br><span class="line">free_page_number = get_page_number(free_buffer_id);</span><br><span class="line"><span class="comment">// 及时 pin 操作</span></span><br><span class="line">pin_buffer(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对其所在的分区加写锁</span></span><br><span class="line">free_partition_id = get_hash_parition(free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 步骤1</span></span><br><span class="line">lock_partition_write(hash_table, free_partition_id);</span><br><span class="line">lock_partition_write(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">// 增加查看是否有别的进程已经在读取磁盘数据了</span></span><br><span class="line">buffer_id, found = lookup(hash_table, page_number);</span><br><span class="line"><span class="keyword">if</span> (found) &#123;</span><br><span class="line">    <span class="keyword">return</span> buffer_id;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 删除旧有的缓存</span></span><br><span class="line"><span class="keyword">delete</span>(hash_table, free_page_number);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 设置该缓存无效</span></span><br><span class="line">set_buffer_invalid(free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 并且添加到 hash 表</span></span><br><span class="line">insert(hash_table, pageNumber, free_buffer_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 释放分区锁</span></span><br><span class="line">unlock_partition(hash_table, free_buffer_id);</span><br><span class="line">unlock_partition(hash_table, partition_id);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 加锁</span></span><br><span class="line">lock_io(free_buffer_id);</span><br><span class="line"><span class="comment">// 如果该缓存已经成功读取完了，那么直接返回。</span></span><br><span class="line"><span class="keyword">while</span> (! is_valid(free_buffer_id)) &#123;</span><br><span class="line">    <span class="comment">// 否则从磁盘读取</span></span><br><span class="line">    read_from_disk(page_number, free_buffer_id);</span><br><span class="line">    set_buffer_valid(free_buffer_id);</span><br><span class="line">&#125;</span><br><span class="line">unlock_io(free_buffer_id)</span><br><span class="line"><span class="keyword">return</span> free_buffer_id;</span><br></pre></td></tr></table></figure>
+<h2 id="锁实现"><a href="#锁实现" class="headerlink" title="锁实现"></a>锁实现</h2><p>上面一步步推导出了最后的并发流程，接下来依次介绍这些锁的实现。</p>
+<h3 id="hash-表分区锁"><a href="#hash-表分区锁" class="headerlink" title="hash 表分区锁"></a>hash 表分区锁</h3><p>postgresql 将 hash 表分成多个区，每个区都对应了一个读写锁。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">BufferTag	newTag;  <span class="comment">// 表示要查找的 page</span></span><br><span class="line">newHash = BufTableHashCode(&amp;newTag);  <span class="comment">// 计算 hash 值</span></span><br><span class="line">newPartitionLock = BufMappingPartitionLock(newHash);   <span class="comment">// 根据hash值找到对应的分区锁</span></span><br><span class="line">LWLockAcquire(newPartitionLock, LW_SHARED); <span class="comment">// 加读锁</span></span><br></pre></td></tr></table></figure>
+<p><code>BufMappingPartitionLock</code>函数分为两步，首先是找到对应的分区。然后是找到该分区对应的锁。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 这里只是简单的取余操作，找到对应的分区。NUM_BUFFER_PARTITIONS 表示分区数目</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> BufTableHashPartition(hashcode)  ((hashcode) % NUM_BUFFER_PARTITIONS) </span></span><br><span class="line"></span><br><span class="line"><span class="comment">// postgresql 分配了一个大的lwlock 数组，分区锁占用了其中一部分，从 BUFFER_MAPPING_LWLOCK_OFFSET 位置开始</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> BufMappingPartitionLock(hashcode) 	(&amp;MainLWLockArray[BUFFER_MAPPING_LWLOCK_OFFSET + BufTableHashPartition(hashcode)].lock)</span></span><br></pre></td></tr></table></figure>
+<h3 id="buffer-header-锁"><a href="#buffer-header-锁" class="headerlink" title="buffer header 锁"></a>buffer header 锁</h3><p><code>BufferDesc</code> 包含了<code>buffer</code>的头部信息，也包含了相关的锁</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">BufferDesc</span></span></span><br><span class="line"><span class="class">&#123;</span></span><br><span class="line">	BufferTag	tag;			<span class="comment">// 缓存哪个文件的block</span></span><br><span class="line">	<span class="keyword">int</span>			buf_id;			<span class="comment">// buffer id</span></span><br><span class="line">	pg_atomic_uint32 state;		<span class="comment">// 状态值</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">int</span>			wait_backend_pid;	<span class="comment">/* backend PID of pin-count waiter */</span></span><br><span class="line">	<span class="keyword">int</span>			freeNext;		<span class="comment">// 指向下个空闲位置</span></span><br><span class="line"></span><br><span class="line">	LWLock		content_lock;	<span class="comment">// 读写锁，用来控制内容的访问</span></span><br><span class="line">&#125; BufferDesc;</span><br></pre></td></tr></table></figure>
+<p><code>state</code>字段是一个 atomic 类型的值，它的更新非常频繁。它有一个标记位<code>BM_LOCKED</code>，作为锁的实现。postgresql 使用了自旋 + CAS 操作来实现乐观锁。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">uint32 <span class="title">LockBufHdr</span><span class="params">(BufferDesc *desc)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// 用于自适应控制自旋间隙</span></span><br><span class="line">	SpinDelayStatus delayStatus;</span><br><span class="line">	uint32		old_buf_state;</span><br><span class="line">    <span class="comment">// 初始化</span></span><br><span class="line">	init_local_spin_delay(&amp;delayStatus);</span><br><span class="line"></span><br><span class="line">	<span class="keyword">while</span> (<span class="literal">true</span>)</span><br><span class="line">	&#123;</span><br><span class="line">		<span class="comment">// CAS 操作，来设置BM_LOCKED标记位</span></span><br><span class="line">		old_buf_state = pg_atomic_fetch_or_u32(&amp;desc-&gt;state, BM_LOCKED);</span><br><span class="line">		<span class="comment">// 如果之前BM_LOCKED标记位没有设置，说明之前没有人加锁，现在我们已经成功加锁了。</span></span><br><span class="line">		<span class="keyword">if</span> (!(old_buf_state &amp; BM_LOCKED))</span><br><span class="line">			<span class="keyword">break</span>;</span><br><span class="line">        <span class="comment">// 如果没有加锁成功，则判断是否需要延迟</span></span><br><span class="line">		perform_spin_delay(&amp;delayStatus);</span><br><span class="line">	&#125;</span><br><span class="line">	finish_spin_delay(&amp;delayStatus);</span><br><span class="line">	<span class="keyword">return</span> old_buf_state | BM_LOCKED;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>释放锁就很简单，只是简单的取消标记位<code>BM_LOCKED</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> UnlockBufHdr(desc, s)	\</span></span><br><span class="line">	<span class="keyword">do</span> &#123;	\</span><br><span class="line">		pg_write_barrier(); \</span><br><span class="line">		pg_atomic_write_u32(&amp;(desc)-&gt;state, (s) &amp; (~BM_LOCKED)); \</span><br><span class="line">	&#125; <span class="keyword">while</span> (<span class="number">0</span>)</span><br></pre></td></tr></table></figure>
+<h3 id="Pin-Buffer-1"><a href="#Pin-Buffer-1" class="headerlink" title="Pin Buffer"></a>Pin Buffer</h3><p>pin 操作也是基于 CAS 操作，<code>state</code>字段中保存了 pin count。不过它并没有使用<code>BM_LOCKED</code>标记位，因为 pin 操作非常频繁，postgresql 做了进一步的优化。它分为两种场景，一种是pin操作之前没有获取到锁，一种是已经获取到了锁。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 调用之前没有获取到锁</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">bool</span> <span class="title">PinBuffer</span><span class="params">(BufferDesc *buf, BufferAccessStrategy strategy)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	Buffer		b = BufferDescriptorGetBuffer(buf);</span><br><span class="line">    old_buf_state = pg_atomic_read_u32(&amp;buf-&gt;state);</span><br><span class="line">    <span class="keyword">for</span> (;;)</span><br><span class="line">	&#123;</span><br><span class="line">        <span class="comment">// 如果之前有锁，那么需要等待锁释放BM_LOCKED标记位</span></span><br><span class="line">        <span class="keyword">if</span> (old_buf_state &amp; BM_LOCKED)</span><br><span class="line">            <span class="comment">// 注意到这里返回的值，肯定不会包含</span></span><br><span class="line">            old_buf_state = WaitBufHdrUnlocked(buf);</span><br><span class="line">        <span class="comment">// 计算出新值</span></span><br><span class="line">        buf_state = old_buf_state;</span><br><span class="line">        buf_state += BUF_REFCOUNT_ONE;</span><br><span class="line">        <span class="comment">// 调用CAS操作，需要注意到 old_buf_state 不会包含BM_LOCKED标记位，所以永远不会更新带有BM_LOCKED标记位的值</span></span><br><span class="line">        <span class="keyword">if</span> (pg_atomic_compare_exchange_u32(&amp;buf-&gt;state, &amp;old_buf_state, buf_state)) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>第二种情况适用于获取到了锁，这种情况只是简单的修改state值就行。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 调用之前已经获取到了锁</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">PinBuffer_Locked</span><span class="params">(BufferDesc *buf)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	uint32		buf_state;</span><br><span class="line">    <span class="comment">// 获取state值</span></span><br><span class="line">	buf_state = pg_atomic_read_u32(&amp;buf-&gt;state);</span><br><span class="line">	Assert(buf_state &amp; BM_LOCKED);</span><br><span class="line">    <span class="comment">// 修改state值</span></span><br><span class="line">	buf_state += BUF_REFCOUNT_ONE;</span><br><span class="line">	UnlockBufHdr(buf, buf_state);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>pin 操作只是保证了对应的 buffer 不会被替换掉。如果需要保证 buffer 里面的数据并发修改，则需要加入 buffer 的读写锁。buffer 读写锁是<code>BufferDesc</code>的<code>content_lock</code>字段，操作比较简单，这里不再详述。</p>
+<h3 id="Buffer-IO-锁"><a href="#Buffer-IO-锁" class="headerlink" title="Buffer IO 锁"></a>Buffer IO 锁</h3><p>为了控制 IO 的同步，postgresql 使用了 buffer_io_lock 锁来控制。因为 IO 操作非常耗时，所以这里就不在使用了乐观锁。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">  <span class="comment">// IO 锁数组，对应了每个 Buffer</span></span><br><span class="line">LWLockMinimallyPadded *BufferIOLWLockArray = <span class="literal">NULL</span>;</span><br><span class="line"><span class="comment">// 直接返回对应位置的IO锁</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> BufferDescriptorGetIOLock(bdesc)  (&amp;(BufferIOLWLockArray[(bdesc)-&gt;buf_id]).lock)</span></span><br></pre></td></tr></table></figure>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>postgresql 对于缓存并发控制是非常精细的，它尽量将耗时的操作放在锁外面执行，很大的提高了并发性。还有进一步将不耗时的操作，通过乐观锁的方式实现。这些设计思想值得细细品味，对我们的程序设计会有很大帮助。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/postgresql-buffer/" rel="tag"># postgresql, buffer</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/09/05/postgresql-storage-architecture/" rel="next" title="Postgresql 存储设计">
+                <i class="fa fa-chevron-left"></i> Postgresql 存储设计
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2020/09/10/postgresql-dynamic-hash/" rel="prev" title="Postgresql 动态哈希表实现">
+                Postgresql 动态哈希表实现 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#设计思路推演"><span class="nav-number">2.</span> <span class="nav-text">设计思路推演</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Hash-表锁"><span class="nav-number">2.1.</span> <span class="nav-text">Hash 表锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Pin-Buffer"><span class="nav-number">2.2.</span> <span class="nav-text">Pin Buffer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#查找空闲Buffer优化"><span class="nav-number">2.3.</span> <span class="nav-text">查找空闲Buffer优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#避免重复读取"><span class="nav-number">2.4.</span> <span class="nav-text">避免重复读取</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#磁盘读取优化"><span class="nav-number">2.5.</span> <span class="nav-text">磁盘读取优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Valid标记位"><span class="nav-number">2.6.</span> <span class="nav-text">Valid标记位</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#锁实现"><span class="nav-number">3.</span> <span class="nav-text">锁实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#hash-表分区锁"><span class="nav-number">3.1.</span> <span class="nav-text">hash 表分区锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#buffer-header-锁"><span class="nav-number">3.2.</span> <span class="nav-text">buffer header 锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Pin-Buffer-1"><span class="nav-number">3.3.</span> <span class="nav-text">Pin Buffer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Buffer-IO-锁"><span class="nav-number">3.4.</span> <span class="nav-text">Buffer IO 锁</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#总结"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

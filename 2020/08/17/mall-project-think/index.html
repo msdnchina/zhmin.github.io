@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="项目感悟,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
+<meta name="keywords" content="项目感悟">
+<meta property="og:type" content="article">
+<meta property="og:title" content="电商项目回顾">
+<meta property="og:url" content="https://zhmin.github.io/2020/08/17/mall-project-think/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://zhmin.github.io/2020/08/17/mall-project-think/prometheus-monitor.png">
+<meta property="og:updated_time" content="2020-09-25T01:58:36.161Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="电商项目回顾">
+<meta name="twitter:description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
+<meta name="twitter:image" content="https://zhmin.github.io/2020/08/17/mall-project-think/prometheus-monitor.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2020/08/17/mall-project-think/">
+
+
+
+
+
+  <title>电商项目回顾 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2020/08/17/mall-project-think/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">电商项目回顾</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2020-08-17T22:29:32+08:00">
+                2020-08-17
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/project/" itemprop="url" rel="index">
+                    <span itemprop="name">project</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2020/08/17/mall-project-think/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2020/08/17/mall-project-think/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2020/08/17/mall-project-think/" class="leancloud_visitors" data-flag-title="电商项目回顾">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。</p>
+<h2 id="项目开发流程"><a href="#项目开发流程" class="headerlink" title="项目开发流程"></a>项目开发流程</h2><p>关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。</p>
+<pre class="mermaid">graph LR
+    demand[需求整理]
+    database[数据库设计]
+    interface[定义前后端接口]
+    backend_dev[后端开发]
+    backend_test[后端自测接口]
+    backend_publish[后端发布测试完成]
+    frontend_dev[前端开发]
+    join_debug[联调]
+
+    demand --> database
+    database --> interface
+    interface --> backend_dev
+    interface --> frontend_dev
+    backend_dev --> backend_test
+    backend_test --> backend_publish
+    backend_publish --> join_debug
+    frontend_dev --> join_debug</pre>
+
+<p>需求整理应该要占整个项目的一定时间，尤其是没有专职产品经理的时候。回顾整个项目，我对于需求整理花费的时间不多，这也往往导致了开发到一半的时候，才发现一些业务的漏洞，又得重新去设计。</p>
+<p>数据库我用的是 postgresql，因为它对 json 的支持比较好，还能在 json 上创建索引，这点可以让我的表设计更加灵活。还有设计数据库时，不必将数据设计得过于准确，可以适当的将关系弱化，这样后期往往有更高的扩展性。如果遇到拿不准的情况，可以尽量从表的数据粒度最小化，然后试着慢慢提高粒度。</p>
+<p>对于接口定义，我是直接通过编写文档，并没有使用接口管理系统。因为找了一圈，发现并没有合适的，所以最后回归到最原始的方式。文档是通过语雀来管理的，它能支持多种文本绘图，写起来要方便很多。我是先定义了接口文档模板，后面添加的文档都是直接在模板上修改，就可以完成。</p>
+<p>当后端开发完成后，需要使用 postman 工具完成自测，确认没问题后，就提交代码到 dev 分支。我使用 jenkins 来完成自动化部署，这样省去了好多时间。当部署完成后，前端就可以直接开始联调了。</p>
+<h2 id="自动化部署"><a href="#自动化部署" class="headerlink" title="自动化部署"></a>自动化部署</h2><p>从上面的流程图，可以看出来代码部署会非常频繁，因为几乎每完成一些接口，就需要立刻部署。这种场景就需要自动化来帮忙了，对于 CI 框架的选择，我直接选择了比较流行的 Jenkins。</p>
+<pre class="mermaid">graph LR
+    push[提交代码]
+    git_hook[git web 钩子]
+    jenkins_start[jenkins触发任务]
+    package[打包]
+    code_inspect[代码审查]
+    run[运行服务]
+    push --> git_hook
+    git_hook --> jenkins_start
+    jenkins_start --> package
+    package --> code_inspect
+    package --> run</pre>
+
+<p>我使用 gitea 作为 git 服务来存储代码，因为它相对 gitlab 会更加轻量，而且界面也满足了基本需求。通过配置 web 钩子，每当有代码推送到仓库时，都会触发 jenkins 的自动化部署。</p>
+<p>后期我添加了代码审查，使用 sonarqube 作为审查工具。注意到代码审核和运行服务是并行的，需要在 Jenkins  配置 paralle。sonarqube 审查也帮助了我规范了代码，这里额外说下，我因为项目大量使用了 lombok，所以在代码扫描的时候，需要添加<code>sonar.java.libraries=$HOME/.m2/**/*.jar</code>参数。</p>
+<h2 id="系统监控"><a href="#系统监控" class="headerlink" title="系统监控"></a>系统监控</h2><p>系统监控使用 prometheus 框架，它不仅支持多种服务的监控，而且也提供了丰富的报警。它实现了对 nginx 的访问请求信息，服务器的基本监控，postgresql 的监控指标。</p>
+<p>prometheus 负责采集和存储监控数据，如果要图形化的展示出来，推荐使用 grafana，它支持页面的自定义配置，界面也非常直观。</p>
+<p><img src="/2020/08/17/mall-project-think/prometheus-monitor.png"></p>
+<p>这一套监控服务比较流行，我就直接看着文档搭建完成了。Prometheus 的原理还没仔细看，希望后面有时间可以深入了解下，尤其是它如何高效的存储时序性数据。</p>
+<h2 id="重构与设计模式"><a href="#重构与设计模式" class="headerlink" title="重构与设计模式"></a>重构与设计模式</h2><p>后期想把之前的代码优化一下，主要侧重于代码的可读性，所以专门花时间看了下 &lt;&lt;设计模式&gt;&gt; 和 &lt;&lt;重构&gt;&gt; 两本书。在尝试将所学习到的知识回馈到项目中时，&lt;&lt;重构&gt;&gt; 这本书带给我的帮助非常大。之前的代码只能说还可以看，算不上简洁，尤其是函数参数的设计很乱。当我按照书中的方法，适当的合并参数到对象里，代码变得要清晰很多。还有多态在项目中用得不多，现在也尝试着将 if 条件语句，通过多态的方式实现。当然还有更多的例子，比如单个大类拆分成多个小类等，这些方法让我的代码更见的简洁好看。当我一步步的优化后，发现不知不觉得就向某种设计模式演变，代码结构自然的就变清晰了。</p>
+<p>通过重构的实践，让我意识到了重构和设计模式的关系，如同进行中和终点的关系。重构教会你如何一步一步的向前走，设计模式就是这条路的终点。</p>
+<h2 id="开发进度"><a href="#开发进度" class="headerlink" title="开发进度"></a>开发进度</h2><p>关于项目预估，我经常过于乐观了，导致开发时间非常紧张。还有之前的前端，基础相对较差，为了不拖累进度，我被逼着学习了两个星期的 vue，也帮忙开发了后台界面。后来换了一个前端，我才轻松许多，可以专心做后端了。那段时间的压力比较大，不过熬过了那段时间，我的前端水平进步很快， flex 布局和 vue 框架都学会了，独立开发一个后台系统，已经没什么问题了。</p>
+<p>关于时间的分配，我应该多花费一些时间在数据库和需求整理上。当数据库设计好了，接口的开发会非常快的，几乎就是体力活了。还有在写代码的时候，需要经常考虑小步重构，这样会使得代码的可维护性更好，后面再添加功能也会更加快速。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/项目感悟/" rel="tag"># 项目感悟</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/05/06/postgresql-physical-replication/" rel="next" title="Postgresql 物理流复制">
+                <i class="fa fa-chevron-left"></i> Postgresql 物理流复制
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2020/08/24/mall-database-design/" rel="prev" title="数据库表设计思路">
+                数据库表设计思路 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#项目开发流程"><span class="nav-number">2.</span> <span class="nav-text">项目开发流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#自动化部署"><span class="nav-number">3.</span> <span class="nav-text">自动化部署</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#系统监控"><span class="nav-number">4.</span> <span class="nav-text">系统监控</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#重构与设计模式"><span class="nav-number">5.</span> <span class="nav-text">重构与设计模式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#开发进度"><span class="nav-number">6.</span> <span class="nav-text">开发进度</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

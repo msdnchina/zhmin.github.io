@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="spark, shuffle writer,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言当分区的数目超过了一定大小，不满足 BypassMergeSortShuffleWriter 时候，Spark 会采用 UnsafeShuffleWriter 算法。同样 UnsafeShuffleWriter 也只适用于不需要聚合操作，也不需要排序的场景。  首先将数据序列化，保存在MemoryBlock中 计算数据的分区位置 记录数据的分区位置和其所在MemoryBlock中的存储位置 然">
+<meta name="keywords" content="spark, shuffle writer">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spark UnsafeShuffleWriter 原理">
+<meta property="og:url" content="https://zhmin.github.io/2019/01/27/spark-unsafe-shuffle-writer/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言当分区的数目超过了一定大小，不满足 BypassMergeSortShuffleWriter 时候，Spark 会采用 UnsafeShuffleWriter 算法。同样 UnsafeShuffleWriter 也只适用于不需要聚合操作，也不需要排序的场景。  首先将数据序列化，保存在MemoryBlock中 计算数据的分区位置 记录数据的分区位置和其所在MemoryBlock中的存储位置 然">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://zhmin.github.io/2019/01/27/spark-unsafe-shuffle-writer/spark-shuffle-unsafe.svg">
+<meta property="og:updated_time" content="2020-09-30T01:13:38.459Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Spark UnsafeShuffleWriter 原理">
+<meta name="twitter:description" content="前言当分区的数目超过了一定大小，不满足 BypassMergeSortShuffleWriter 时候，Spark 会采用 UnsafeShuffleWriter 算法。同样 UnsafeShuffleWriter 也只适用于不需要聚合操作，也不需要排序的场景。  首先将数据序列化，保存在MemoryBlock中 计算数据的分区位置 记录数据的分区位置和其所在MemoryBlock中的存储位置 然">
+<meta name="twitter:image" content="https://zhmin.github.io/2019/01/27/spark-unsafe-shuffle-writer/spark-shuffle-unsafe.svg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2019/01/27/spark-unsafe-shuffle-writer/">
+
+
+
+
+
+  <title>Spark UnsafeShuffleWriter 原理 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2019/01/27/spark-unsafe-shuffle-writer/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">Spark UnsafeShuffleWriter 原理</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2019-01-27T20:10:52+08:00">
+                2019-01-27
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/spark/" itemprop="url" rel="index">
+                    <span itemprop="name">spark</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/01/27/spark-unsafe-shuffle-writer/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/01/27/spark-unsafe-shuffle-writer/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2019/01/27/spark-unsafe-shuffle-writer/" class="leancloud_visitors" data-flag-title="Spark UnsafeShuffleWriter 原理">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>当分区的数目超过了一定大小，不满足 BypassMergeSortShuffleWriter 时候，Spark 会采用 UnsafeShuffleWriter 算法。同样 UnsafeShuffleWriter 也只适用于不需要聚合操作，也不需要排序的场景。</p>
+<ol>
+<li>首先将数据序列化，保存在<code>MemoryBlock</code>中</li>
+<li>计算数据的分区位置</li>
+<li>记录数据的分区位置和其所在<code>MemoryBlock</code>中的存储位置</li>
+<li><p>然后根据分区位置和存储位置，进行排序</p>
+<p>如下图所示，表示了map端一个分区的shuffle过程：</p>
+</li>
+</ol>
+<p><img src="/2019/01/27/spark-unsafe-shuffle-writer/spark-shuffle-unsafe.svg" alt="spark-shuffle-unsafe"></p>
+<p>首先将数据序列化，保存在MemoryBlock中。然后将该数据的地址和对应的分区索引，保存在ShuffleInMemorySorter内存中，利用ShuffleInMemorySorter根据分区排序。当内存不足时，会触发spill操作，生成spill文件。最后会将所有的spill文件合并在同一个文件里。</p>
+<p>整个过程可以想象成归并排序。ShuffleExternalSorter负责分片的读取数据到内存，然后利用ShuffleInMemorySorter进行排序。排序之后会将结果存储到磁盘文件中。这样就会有很多个已排序的文件， UnsafeShuffleWriter会将所有的文件合并。</p>
+<h2 id="序列化数据"><a href="#序列化数据" class="headerlink" title="序列化数据"></a>序列化数据</h2><p>数据序列化由<code>UnsafeShuffleWriter</code>类负责，通过查看它的<code>insertRecordIntoSorter</code>方法，就能很清楚的明白。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">UnsafeShuffleWriter</span>&lt;<span class="title">K</span>, <span class="title">V</span>&gt; <span class="keyword">extends</span> <span class="title">ShuffleWriter</span>&lt;<span class="title">K</span>, <span class="title">V</span>&gt; </span>&#123;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 插入单条数据</span></span><br><span class="line">    <span class="function"><span class="keyword">void</span> <span class="title">insertRecordIntoSorter</span><span class="params">(Product2&lt;K, V&gt; record)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">      <span class="keyword">assert</span>(sorter != <span class="keyword">null</span>);</span><br><span class="line">      <span class="comment">// 获取该条数据的key</span></span><br><span class="line">      <span class="keyword">final</span> K key = record._1();</span><br><span class="line">      <span class="comment">// 根据key计算出，该数据要被分配的分区索引</span></span><br><span class="line">      <span class="keyword">final</span> <span class="keyword">int</span> partitionId = partitioner.getPartition(key);</span><br><span class="line">      <span class="comment">// serBuffer存储序列化之后的数据，每一次序列化数据之前，都会清空</span></span><br><span class="line">      serBuffer.reset();</span><br><span class="line">      <span class="comment">// serOutputStream流是在serBuffer外层包装的，通过它实现序列化的写入</span></span><br><span class="line">      serOutputStream.writeKey(key, OBJECT_CLASS_TAG);</span><br><span class="line">      serOutputStream.writeValue(record._2(), OBJECT_CLASS_TAG);</span><br><span class="line">      serOutputStream.flush();</span><br><span class="line"></span><br><span class="line">      <span class="keyword">final</span> <span class="keyword">int</span> serializedRecordSize = serBuffer.size();</span><br><span class="line">      <span class="keyword">assert</span> (serializedRecordSize &gt; <span class="number">0</span>);</span><br><span class="line">      <span class="comment">// 调用ShuffleExternalSorter的insertRecord方法写入数据</span></span><br><span class="line">      sorter.insertRecord(</span><br><span class="line">        serBuffer.getBuf(), Platform.BYTE_ARRAY_OFFSET, serializedRecordSize, partitionId);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="存储缓存中"><a href="#存储缓存中" class="headerlink" title="存储缓存中"></a>存储缓存中</h2><p><code>ShuffleExternalSorter</code>会负责将数据存储到<code>MemoryBlock</code>中，然后提出取它的所在位置和分区位置，将其编码存储到<code>ShuffleInMemorySorter</code>中。</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">ShuffleExternalSorter</span> <span class="keyword">extends</span> <span class="title">MemoryConsumer</span> </span>&#123;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 已分配的 MemoryBlock链表，用于存储数据</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">final</span> <span class="type">LinkedList</span>&lt;<span class="type">MemoryBlock</span>&gt; allocatedPages = <span class="keyword">new</span> <span class="type">LinkedList</span>&lt;&gt;();</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 存储数据的位置和分区，后面会使用它进行排序</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">ShuffleInMemorySorter</span> inMemSorter;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们通过查看<code>insertRecord</code>方法，就能明白两者之前的关系。下面的代码经过简化处理</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// recordBase表示数据对象的起始地址，</span></span><br><span class="line"><span class="comment">// recordOffset表示数据的偏移量（相对于 recordBase）</span></span><br><span class="line"><span class="comment">// length表示数据的长度</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">insertRecord</span><span class="params">(Object recordBase, <span class="keyword">long</span> recordOffset, <span class="keyword">int</span> length, <span class="keyword">int</span> partitionId)</span></span></span><br><span class="line"><span class="function">    <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">    <span class="comment">// 这里会额外使用4个字节，用来存储该条数据的长度</span></span><br><span class="line">    <span class="keyword">final</span> <span class="keyword">int</span> required = length + <span class="number">4</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 获取当前MemoryBlock的位置</span></span><br><span class="line">    <span class="keyword">final</span> Object base = currentPage.getBaseObject();</span><br><span class="line">    <span class="comment">// 将数据所在MemoryBlock的标识和起始位置，压缩成一个Long类型</span></span><br><span class="line">    <span class="keyword">final</span> <span class="keyword">long</span> recordAddress = taskMemoryManager.encodePageNumberAndOffset(currentPage, pageCursor);</span><br><span class="line">    <span class="comment">// 向 MemoryBlock 写入数据长度</span></span><br><span class="line">    Platform.putInt(base, pageCursor, length);</span><br><span class="line">    pageCursor += <span class="number">4</span>;</span><br><span class="line">    <span class="comment">// 拷贝数据到MemoryBlock</span></span><br><span class="line">    Platform.copyMemory(recordBase, recordOffset, base, pageCursor, length);</span><br><span class="line">    pageCursor += length;</span><br><span class="line">    <span class="comment">// 将数据所在的位置，和分区保存到 inMemSorter 中</span></span><br><span class="line">    inMemSorter.insertRecord(recordAddress, partitionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="数据分区排序"><a href="#数据分区排序" class="headerlink" title="数据分区排序"></a>数据分区排序</h2><h3 id="数据格式"><a href="#数据格式" class="headerlink" title="数据格式"></a>数据格式</h3><p><code>ShuffleInMemorySorter</code>存储的数据格式如下，将数据地址和分区索引，压缩在一个 64 位的 Long类型。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">--------------------------------------------------------------------------</span><br><span class="line">     24 bit           |    13 bit             |      27 bit</span><br><span class="line">--------------------------------------------------------------------------</span><br><span class="line">   partitionId        |   memoryBlock page    |      memoryBlock offset</span><br><span class="line">--------------------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+<h3 id="排序算法"><a href="#排序算法" class="headerlink" title="排序算法"></a>排序算法</h3><p><code>ShuffleInMemorySorter</code>的数据可以看作是一个 Long 数组，会根据 partitionId 来将数据排序。它支持两种排序算法：</p>
+<ol>
+<li>TimSort 排序算法，它是一种起源于归并排序和插入排序的混合排序算法，具体原理比较复杂，读者可以自行搜索</li>
+<li>RadixSort 排序算法，它是是一种非比较型整数排序算法，其原理是将整数按位数切割成不同的数字，然后按每个位数分别比较。具体原理比较复杂，读者可以自行搜索</li>
+</ol>
+<p>Spark 默认采用<code>RadixSort</code>算法，可以通过<code>spark.shuffle.sort.useRadixSort</code>配置项指定。不过<code>RadixSort</code>算法对内存空间的要求比较高，需要额外的内存空间，大小等于需要排序的数据。而 <code>TimSort</code>算法额外只需要一半的空间。</p>
+<h3 id="内存扩容"><a href="#内存扩容" class="headerlink" title="内存扩容"></a>内存扩容</h3><p><code>ShuffleInMemorySorter</code>随着数据的增长，它的容量也会随着扩充。初始内存大小由<code>spark.shuffle.sort.initialBufferSize</code>配置项指定，默认为 4KB。每次扩容后的容量是之前的一倍。</p>
+<h2 id="Spill-操作"><a href="#Spill-操作" class="headerlink" title="Spill 操作"></a>Spill 操作</h2><h3 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h3><p>上述已经讲完了整个的排序原理，不过都没考虑到内存容量有限的情况，尤其是在大数据的场景中。我们知道<code>UnsafeShuffleWriter</code>在执行排序时，会有两个方面使用到内存，一个数据存储到 <code>MemoryBlock</code>里，另一种是排序会使用到。所以当这两方面的内存受到限制时，都会出发Spill 操作（将数据持久化到磁盘里，释放内存空间）。</p>
+<p><code>ShuffleExternalSorter</code>继承<code>MemoryConsumer</code>，数据存储和排序使用的内存都是由<code>MemoryConsumer</code>申请的。而<code>MemoryBlock</code>的申请是受到内存池的限制，所以当内存池的容量不足时，就会触发 Spill 操作。</p>
+<p>还有当需要排序的数据过多时，也会触发 Spill 操作。这个阈值由<code>spark.shuffle.spill.numElementsForceSpillThreshold</code>配置项指定，默认是没有限制的。</p>
+<h3 id="Spill-过程"><a href="#Spill-过程" class="headerlink" title="Spill 过程"></a>Spill 过程</h3><p>Spill 操作的源码如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">ShuffleExternalSorter</span> <span class="keyword">extends</span> <span class="title">MemoryConsumer</span> </span>&#123;</span><br><span class="line">    </span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="keyword">long</span> <span class="title">spill</span><span class="params">(<span class="keyword">long</span> size, MemoryConsumer trigger)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (trigger != <span class="keyword">this</span> || inMemSorter == <span class="keyword">null</span> || inMemSorter.numRecords() == <span class="number">0</span>) &#123;</span><br><span class="line">      <span class="keyword">return</span> <span class="number">0L</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 调用writeSortedFile方法将结果写入磁盘</span></span><br><span class="line">    writeSortedFile(<span class="keyword">false</span>);</span><br><span class="line">    <span class="comment">// 释放数据存储的内存</span></span><br><span class="line">    <span class="keyword">final</span> <span class="keyword">long</span> spillSize = freeMemory();</span><br><span class="line">    <span class="comment">// 释放排序内存</span></span><br><span class="line">    inMemSorter.reset();</span><br><span class="line">    <span class="keyword">return</span> spillSize;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>writeSortedFile</code>方法的原理比较简单，这里简单说下流程</p>
+<ol>
+<li>首先会将数据根据分区排序</li>
+<li>然后遍历排序后的结果，依次根据地址取出原始数据，存到文件里面</li>
+</ol>
+<p>每次 Spill 操作只会生成一个文件，里面的数据都是排序好的。Spark 使用 <code>SpillInfo</code>来表示此次信息</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">SpillInfo</span> </span>&#123;</span><br><span class="line">  <span class="comment">// 每个对应分区的数据长度 </span></span><br><span class="line">  <span class="keyword">final</span> long[] partitionLengths;</span><br><span class="line">    </span><br><span class="line">  <span class="comment">// 存储的文件</span></span><br><span class="line">  <span class="keyword">final</span> <span class="type">File</span> file;</span><br><span class="line"> &#125;</span><br></pre></td></tr></table></figure>
+<h2 id="合并文件"><a href="#合并文件" class="headerlink" title="合并文件"></a>合并文件</h2><p>Spark 在排序时有可能会触发多次 Spill 操作，所以最后需要将这些 spill 文件合并一起。合并的原理很简单，采用了归并排序算法。很明显对于文件的操作，我们可以尽可能的使用零拷贝技术，Spark 当然也实现了，称之为快速合并。</p>
+<p>当数据没有被加密，并且压缩格式支持的话，是可以进行快速合并的。目前支持的压缩格式如下：</p>
+<ol>
+<li>没有被压缩</li>
+<li>snappy 压缩</li>
+<li>lzf 压缩</li>
+<li>lz4 压缩</li>
+<li>zstd 压缩</li>
+</ol>
+<p>这里涉及到了下列配置项，</p>
+<table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>默认值</th>
+<th>注释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>spark.file.transferTo</td>
+<td>true</td>
+<td>是否允许使用零拷贝</td>
+</tr>
+<tr>
+<td>spark.shuffle.unsafe.fastMergeEnabled</td>
+<td>true</td>
+<td>是否开启快速合并</td>
+</tr>
+<tr>
+<td>spark.shuffle.compress</td>
+<td>true</td>
+<td>是否允许压缩数据</td>
+</tr>
+</tbody>
+</table>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/spark-shuffle-writer/" rel="tag"># spark, shuffle writer</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/01/26/spark-shuffle-writer/" rel="next" title="Spark BypassMergeSortShuffleWriter 原理">
+                <i class="fa fa-chevron-left"></i> Spark BypassMergeSortShuffleWriter 原理
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/01/28/spark-shuffle-aggregator/" rel="prev" title="Spark Shuffle 聚合原理">
+                Spark Shuffle 聚合原理 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">84</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">73</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#序列化数据"><span class="nav-number">2.</span> <span class="nav-text">序列化数据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#存储缓存中"><span class="nav-number">3.</span> <span class="nav-text">存储缓存中</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据分区排序"><span class="nav-number">4.</span> <span class="nav-text">数据分区排序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#数据格式"><span class="nav-number">4.1.</span> <span class="nav-text">数据格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#排序算法"><span class="nav-number">4.2.</span> <span class="nav-text">排序算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#内存扩容"><span class="nav-number">4.3.</span> <span class="nav-text">内存扩容</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Spill-操作"><span class="nav-number">5.</span> <span class="nav-text">Spill 操作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#触发条件"><span class="nav-number">5.1.</span> <span class="nav-text">触发条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Spill-过程"><span class="nav-number">5.2.</span> <span class="nav-text">Spill 过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#合并文件"><span class="nav-number">6.</span> <span class="nav-text">合并文件</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

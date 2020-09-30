@@ -770,7 +770,7 @@ Cloudera Spark
         
           <h2 class="post-title" itemprop="name headline">
                 
-                <a class="post-title-link" href="/2019/03/18/kafka-consumer-coordinator/" itemprop="url">KafkaConsumer Coordinator 原理</a></h2>
+                <a class="post-title-link" href="/2019/03/18/kafka-consumer-coordinator/" itemprop="url">Kafka Rebalance 客户端原理</a></h2>
         
 
         <div class="post-meta">
@@ -832,7 +832,7 @@ Cloudera Spark
 
           
           
-             <span id="/2019/03/18/kafka-consumer-coordinator/" class="leancloud_visitors" data-flag-title="KafkaConsumer Coordinator 原理">
+             <span id="/2019/03/18/kafka-consumer-coordinator/" class="leancloud_visitors" data-flag-title="Kafka Rebalance 客户端原理">
                <span class="post-meta-divider">|</span>
                <span class="post-meta-item-icon">
                  <i class="fa fa-eye"></i>
@@ -865,7 +865,7 @@ Cloudera Spark
       
         
           
-          KafkaConsumer  Coordinator 原理Kafka消费者提供了组的概念，它允许多个consumer共同消费一个topic，而不会造成冲突。Kafka提供了Coordinator服务，负责管理消费组。当有新增的consumer加入组，或者有consumer离开组，都会触发Coordi
+          前言Kafka消费者提供了组的概念，它允许多个 consumer 共同消费一个 topic，而不会造成冲突。Kafka提供了Coordinator服务，负责管理消费组。当有新增的consumer加入组，或者有consumer离开组，都会触发Coordinator的重新平衡操作，Coordinator
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -1108,7 +1108,7 @@ Cloudera Spark
         
           <h2 class="post-title" itemprop="name headline">
                 
-                <a class="post-title-link" href="/2019/03/11/kafka-producer/" itemprop="url">KafkaProducer 原理</a></h2>
+                <a class="post-title-link" href="/2019/03/11/kafka-producer/" itemprop="url">Kafka Producer 原理</a></h2>
         
 
         <div class="post-meta">
@@ -1170,7 +1170,7 @@ Cloudera Spark
 
           
           
-             <span id="/2019/03/11/kafka-producer/" class="leancloud_visitors" data-flag-title="KafkaProducer 原理">
+             <span id="/2019/03/11/kafka-producer/" class="leancloud_visitors" data-flag-title="Kafka Producer 原理">
                <span class="post-meta-divider">|</span>
                <span class="post-meta-item-icon">
                  <i class="fa fa-eye"></i>
@@ -1203,9 +1203,9 @@ Cloudera Spark
       
         
           
-          Kafka Producer 原理Kafka为使用者提供了客户端，负责向Kafka中写入消息，由KafkaProducer实现。KafkaProducer为了提高系统的吞吐量，它会先将消息缓存起来，然后以批次为单位的发送。具体原理如下：
+          前言Kafka为使用者提供了客户端，负责向Kafka中写入消息，由KafkaProducer实现。KafkaProducer为了提高系统的吞吐量，它会先将消息缓存起来，然后以批次为单位的发送。具体原理如下：
 
-KafkaProducer将消息发送给RecordAccum
+KafkaProducer计算出消息发往哪个分区，然后放入RecordAccumulato
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -1980,7 +1980,7 @@ Rpc Server 启动Spark Rpc的服务端需要运行在NettyRpcEnv环境下，Nett
               
                 <a href="/archives/">
               
-                  <span class="site-state-item-count">83</span>
+                  <span class="site-state-item-count">84</span>
                   <span class="site-state-item-name">posts</span>
                 </a>
               </div>
@@ -2002,7 +2002,7 @@ Rpc Server 启动Spark Rpc的服务端需要运行在NettyRpcEnv环境下，Nett
               
               <div class="site-state-item site-state-tags">
                 
-                  <span class="site-state-item-count">72</span>
+                  <span class="site-state-item-count">73</span>
                   <span class="site-state-item-name">tags</span>
                 
               </div>

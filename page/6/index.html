@@ -428,7 +428,7 @@ Cloudera Spark
         
           <h2 class="post-title" itemprop="name headline">
                 
-                <a class="post-title-link" href="/2019/04/01/kafka-group-coordinator/" itemprop="url">Kafka Group Coordinator 原理</a></h2>
+                <a class="post-title-link" href="/2019/04/01/kafka-group-coordinator/" itemprop="url">Kafka Rebalance 服务端原理</a></h2>
         
 
         <div class="post-meta">
@@ -490,7 +490,7 @@ Cloudera Spark
 
           
           
-             <span id="/2019/04/01/kafka-group-coordinator/" class="leancloud_visitors" data-flag-title="Kafka Group Coordinator 原理">
+             <span id="/2019/04/01/kafka-group-coordinator/" class="leancloud_visitors" data-flag-title="Kafka Rebalance 服务端原理">
                <span class="post-meta-divider">|</span>
                <span class="post-meta-item-icon">
                  <i class="fa fa-eye"></i>
@@ -523,10 +523,8 @@ Cloudera Spark
       
         
           
-          Kafka Group Coordinator 原理从这篇博客，我们知道客户端与服务端的交互，分为三种请求。
-
-第一种，寻找GroupCoordinator地址请求。consumer客户端首先需要知道GroupCoordinator的地址。
-第二种，加入组请求。consumer客户端向GroupCo
+          前言上篇文章讲述了 Rebalance 在客户端的实现，这篇文章就来讲讲它在服务端是如何实现的。服务端由GroupCoordinator负责处理请求，包含寻找请求，加入请求，心跳请求等。
+元数据我们先来看看服务端维护了哪些数据。GroupCoordinator 为每个 consumer group 
           ...
           <!--noindex-->
           <div class="post-button text-center">

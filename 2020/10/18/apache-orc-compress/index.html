@@ -68,7 +68,7 @@
 
 
 
-  <meta name="keywords" content="项目感悟,">
+  <meta name="keywords" content="orc,">
 
 
 
@@ -79,20 +79,18 @@
 
 
 
-<meta name="description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
-<meta name="keywords" content="项目感悟">
+<meta name="description" content="前言orc 作为列式存储，其特点之一就是极高的数据压缩比，这篇文章就来讲讲它的压缩原理。 数据类型orc 对于每种不同的数据类型，对应着不同的压缩方式。比如 string类型压缩，int 类型压缩，字节类型压缩。下面会依次介绍它们的原理。除此之外，它们还支持在外层共有的压缩格式，可以指定 zlib 或者 snappy。关于压缩配置参数有下面两个：  orc.compress指定了编码格式，默认为z">
+<meta name="keywords" content="orc">
 <meta property="og:type" content="article">
-<meta property="og:title" content="电商项目回顾">
-<meta property="og:url" content="https://zhmin.github.io/2020/08/17/mall-project-think/index.html">
+<meta property="og:title" content="Apache Orc 压缩原理">
+<meta property="og:url" content="https://zhmin.github.io/2020/10/18/apache-orc-compress/index.html">
 <meta property="og:site_name" content="学习笔记">
-<meta property="og:description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
+<meta property="og:description" content="前言orc 作为列式存储，其特点之一就是极高的数据压缩比，这篇文章就来讲讲它的压缩原理。 数据类型orc 对于每种不同的数据类型，对应着不同的压缩方式。比如 string类型压缩，int 类型压缩，字节类型压缩。下面会依次介绍它们的原理。除此之外，它们还支持在外层共有的压缩格式，可以指定 zlib 或者 snappy。关于压缩配置参数有下面两个：  orc.compress指定了编码格式，默认为z">
 <meta property="og:locale" content="default">
-<meta property="og:image" content="https://zhmin.github.io/2020/08/17/mall-project-think/prometheus-monitor.png">
-<meta property="og:updated_time" content="2020-09-25T01:58:36.161Z">
+<meta property="og:updated_time" content="2020-10-19T02:24:15.073Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="电商项目回顾">
-<meta name="twitter:description" content="前言最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。 项目开发流程关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。 graph LR     demand[需求整理]     database[数据">
-<meta name="twitter:image" content="https://zhmin.github.io/2020/08/17/mall-project-think/prometheus-monitor.png">
+<meta name="twitter:title" content="Apache Orc 压缩原理">
+<meta name="twitter:description" content="前言orc 作为列式存储，其特点之一就是极高的数据压缩比，这篇文章就来讲讲它的压缩原理。 数据类型orc 对于每种不同的数据类型，对应着不同的压缩方式。比如 string类型压缩，int 类型压缩，字节类型压缩。下面会依次介绍它们的原理。除此之外，它们还支持在外层共有的压缩格式，可以指定 zlib 或者 snappy。关于压缩配置参数有下面两个：  orc.compress指定了编码格式，默认为z">
 
 
 
@@ -122,13 +120,13 @@
 
 
 
-  <link rel="canonical" href="https://zhmin.github.io/2020/08/17/mall-project-think/">
+  <link rel="canonical" href="https://zhmin.github.io/2020/10/18/apache-orc-compress/">
 
 
 
 
 
-  <title>电商项目回顾 | 学习笔记</title>
+  <title>Apache Orc 压缩原理 | 学习笔记</title>
   
 
 
@@ -245,7 +243,7 @@
   
   
   <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2020/08/17/mall-project-think/">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2020/10/18/apache-orc-compress/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="name" content="zhmin">
@@ -262,7 +260,7 @@
 
         
         
-          <h2 class="post-title" itemprop="name headline">电商项目回顾</h2>
+          <h2 class="post-title" itemprop="name headline">Apache Orc 压缩原理</h2>
         
 
         <div class="post-meta">
@@ -274,8 +272,8 @@
               
                 <span class="post-meta-item-text">Posted on</span>
               
-              <time title="Post created" itemprop="dateCreated datePublished" datetime="2020-08-17T22:29:32+08:00">
-                2020-08-17
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2020-10-18T22:35:34+08:00">
+                2020-10-18
               </time>
             
 
@@ -297,8 +295,8 @@
               
               
                 <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/categories/project/" itemprop="url" rel="index">
-                    <span itemprop="name">project</span>
+                  <a href="/categories/orc/" itemprop="url" rel="index">
+                    <span itemprop="name">orc</span>
                   </a>
                 </span>
 
@@ -315,8 +313,8 @@
                 <span class="post-meta-item-icon">
                   <i class="fa fa-comment-o"></i>
                 </span>
-                <a href="/2020/08/17/mall-project-think/#comments" itemprop="discussionUrl">
-                  <span class="post-comments-count valine-comment-count" data-xid="/2020/08/17/mall-project-think/" itemprop="commentCount"></span>
+                <a href="/2020/10/18/apache-orc-compress/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2020/10/18/apache-orc-compress/" itemprop="commentCount"></span>
                 </a>
               </span>
             
@@ -324,7 +322,7 @@
 
           
           
-             <span id="/2020/08/17/mall-project-think/" class="leancloud_visitors" data-flag-title="电商项目回顾">
+             <span id="/2020/10/18/apache-orc-compress/" class="leancloud_visitors" data-flag-title="Apache Orc 压缩原理">
                <span class="post-meta-divider">|</span>
                <span class="post-meta-item-icon">
                  <i class="fa fa-eye"></i>
@@ -355,55 +353,39 @@
       
 
       
-        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近在开发一个电商项目，再加上生活上的一些琐事，学习时间完全没有了。忙了几个月，项目终于要接近尾声了，想着抽点空总结下项目，也顺便水一篇博客。这篇文章只是粗略得讲解整个项目开发流程，里面的有些设计细节后面博客会讲到。</p>
-<h2 id="项目开发流程"><a href="#项目开发流程" class="headerlink" title="项目开发流程"></a>项目开发流程</h2><p>关于项目环境，因为开发人数比较少，所以我只搭建了一个开发环境，也作为测试环境使用。</p>
-<pre class="mermaid">graph LR
-    demand[需求整理]
-    database[数据库设计]
-    interface[定义前后端接口]
-    backend_dev[后端开发]
-    backend_test[后端自测接口]
-    backend_publish[后端发布测试完成]
-    frontend_dev[前端开发]
-    join_debug[联调]
-
-    demand --> database
-    database --> interface
-    interface --> backend_dev
-    interface --> frontend_dev
-    backend_dev --> backend_test
-    backend_test --> backend_publish
-    backend_publish --> join_debug
-    frontend_dev --> join_debug</pre>
-
-<p>需求整理应该要占整个项目的一定时间，尤其是没有专职产品经理的时候。回顾整个项目，我对于需求整理花费的时间不多，这也往往导致了开发到一半的时候，才发现一些业务的漏洞，又得重新去设计。</p>
-<p>数据库我用的是 postgresql，因为它对 json 的支持比较好，还能在 json 上创建索引，这点可以让我的表设计更加灵活。还有设计数据库时，不必将数据设计得过于准确，可以适当的将关系弱化，这样后期往往有更高的扩展性。如果遇到拿不准的情况，可以尽量从表的数据粒度最小化，然后试着慢慢提高粒度。</p>
-<p>对于接口定义，我是直接通过编写文档，并没有使用接口管理系统。因为找了一圈，发现并没有合适的，所以最后回归到最原始的方式。文档是通过语雀来管理的，它能支持多种文本绘图，写起来要方便很多。我是先定义了接口文档模板，后面添加的文档都是直接在模板上修改，就可以完成。</p>
-<p>当后端开发完成后，需要使用 postman 工具完成自测，确认没问题后，就提交代码到 dev 分支。我使用 jenkins 来完成自动化部署，这样省去了好多时间。当部署完成后，前端就可以直接开始联调了。</p>
-<h2 id="自动化部署"><a href="#自动化部署" class="headerlink" title="自动化部署"></a>自动化部署</h2><p>从上面的流程图，可以看出来代码部署会非常频繁，因为几乎每完成一些接口，就需要立刻部署。这种场景就需要自动化来帮忙了，对于 CI 框架的选择，我直接选择了比较流行的 Jenkins。</p>
-<pre class="mermaid">graph LR
-    push[提交代码]
-    git_hook[git web 钩子]
-    jenkins_start[jenkins触发任务]
-    package[打包]
-    code_inspect[代码审查]
-    run[运行服务]
-    push --> git_hook
-    git_hook --> jenkins_start
-    jenkins_start --> package
-    package --> code_inspect
-    package --> run</pre>
-
-<p>我使用 gitea 作为 git 服务来存储代码，因为它相对 gitlab 会更加轻量，而且界面也满足了基本需求。通过配置 web 钩子，每当有代码推送到仓库时，都会触发 jenkins 的自动化部署。</p>
-<p>后期我添加了代码审查，使用 sonarqube 作为审查工具。注意到代码审核和运行服务是并行的，需要在 Jenkins  配置 paralle。sonarqube 审查也帮助了我规范了代码，这里额外说下，我因为项目大量使用了 lombok，所以在代码扫描的时候，需要添加<code>sonar.java.libraries=$HOME/.m2/**/*.jar</code>参数。</p>
-<h2 id="系统监控"><a href="#系统监控" class="headerlink" title="系统监控"></a>系统监控</h2><p>系统监控使用 prometheus 框架，它不仅支持多种服务的监控，而且也提供了丰富的报警。它实现了对 nginx 的访问请求信息，服务器的基本监控，postgresql 的监控指标。</p>
-<p>prometheus 负责采集和存储监控数据，如果要图形化的展示出来，推荐使用 grafana，它支持页面的自定义配置，界面也非常直观。</p>
-<p><img src="/2020/08/17/mall-project-think/prometheus-monitor.png"></p>
-<p>这一套监控服务比较流行，我就直接看着文档搭建完成了。Prometheus 的原理还没仔细看，希望后面有时间可以深入了解下，尤其是它如何高效的存储时序性数据。</p>
-<h2 id="重构与设计模式"><a href="#重构与设计模式" class="headerlink" title="重构与设计模式"></a>重构与设计模式</h2><p>后期想把之前的代码优化一下，主要侧重于代码的可读性，所以专门花时间看了下 &lt;&lt;设计模式&gt;&gt; 和 &lt;&lt;重构&gt;&gt; 两本书。在尝试将所学习到的知识回馈到项目中时，&lt;&lt;重构&gt;&gt; 这本书带给我的帮助非常大。之前的代码只能说还可以看，算不上简洁，尤其是函数参数的设计很乱。当我按照书中的方法，适当的合并参数到对象里，代码变得要清晰很多。还有多态在项目中用得不多，现在也尝试着将 if 条件语句，通过多态的方式实现。当然还有更多的例子，比如单个大类拆分成多个小类等，这些方法让我的代码更见的简洁好看。当我一步步的优化后，发现不知不觉得就向某种设计模式演变，代码结构自然的就变清晰了。</p>
-<p>通过重构的实践，让我意识到了重构和设计模式的关系，如同进行中和终点的关系。重构教会你如何一步一步的向前走，设计模式就是这条路的终点。</p>
-<h2 id="开发进度"><a href="#开发进度" class="headerlink" title="开发进度"></a>开发进度</h2><p>关于项目预估，我经常过于乐观了，导致开发时间非常紧张。还有之前的前端，基础相对较差，为了不拖累进度，我被逼着学习了两个星期的 vue，也帮忙开发了后台界面。后来换了一个前端，我才轻松许多，可以专心做后端了。那段时间的压力比较大，不过熬过了那段时间，我的前端水平进步很快， flex 布局和 vue 框架都学会了，独立开发一个后台系统，已经没什么问题了。</p>
-<p>关于时间的分配，我应该多花费一些时间在数据库和需求整理上。当数据库设计好了，接口的开发会非常快的，几乎就是体力活了。还有在写代码的时候，需要经常考虑小步重构，这样会使得代码的可维护性更好，后面再添加功能也会更加快速。</p>
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>orc 作为列式存储，其特点之一就是极高的数据压缩比，这篇文章就来讲讲它的压缩原理。</p>
+<h2 id="数据类型"><a href="#数据类型" class="headerlink" title="数据类型"></a>数据类型</h2><p>orc 对于每种不同的数据类型，对应着不同的压缩方式。比如 string类型压缩，int 类型压缩，字节类型压缩。下面会依次介绍它们的原理。除此之外，它们还支持在外层共有的压缩格式，可以指定 zlib 或者 snappy。关于压缩配置参数有下面两个：</p>
+<ol>
+<li><code>orc.compress</code>指定了编码格式，默认为zlib。</li>
+<li><code>orc.compress.size</code>指定了编码的buffer大小，默认256KB。</li>
+</ol>
+<h2 id="整数类型压缩"><a href="#整数类型压缩" class="headerlink" title="整数类型压缩"></a>整数类型压缩</h2><p>整数类型的压缩有三个版本，第一个版本是采用了重复元素编码，第二个版本是采用了等差元素编码。为了提高压缩效率，orc 开发出了第三版。所以本片会直接讲解最新版的压缩。orc 会根据数据的分布情况，采用不同的编码方式。</p>
+<h3 id="Short-Repeat-编码"><a href="#Short-Repeat-编码" class="headerlink" title="Short Repeat 编码"></a>Short Repeat 编码</h3><p>如果数据元素都是相同的，并且重复的元素长度大于等于3，还要小于等于10，那么就会采用这种编码。它的存储格式如下：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">-----------------------------------------------------------------</span><br><span class="line">  encoding type   |   重复值的长度  ｜  重复的元素数目  ｜   重复值   ｜     </span><br><span class="line">------------------------------------------------------------------</span><br><span class="line">  2 bits          |    3 bits     ｜   3 bits       ｜           ｜</span><br><span class="line">------------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+<p>前面的 encoding type 是通用的头部格式，通过它知道该数据的编码格式为 short repeat。</p>
+<p>重复值所占用存储的字节长度用 3 bit 表示，也就是最多能表示 7bytes 的值。</p>
+<p>重复的元素数目用 3 bit 表示，因为只有重复元素大于等于3才会触发该编码，所以 7 + 3 = 10。它只能最多表示10个重复元素的编码。</p>
+<p>重复值的存储时，也会做一次编码，它采用了 ZigZag  编码，并且会将为零的高位截断。比如有一个数字 15，它只需要使用 1byte 就可以存储了。</p>
+<h3 id="Delta-编码"><a href="#Delta-编码" class="headerlink" title="Delta 编码"></a>Delta 编码</h3><p>当满足下列条件之一，就会采用 delta 编码。</p>
+<ol>
+<li>重复的元素长度大于10个</li>
+<li>元素排列为等差数列的形式</li>
+<li>元素排列为递增或者递减</li>
+</ol>
+<p>delta 编码的通用格式如下：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">-------------------------------------------------------------------</span><br><span class="line">  encoding type   |   值占用的位数 fb  ｜   元素数目       ｜   blob   ｜     </span><br><span class="line">-------------------------------------------------------------------</span><br><span class="line">  2 bits          |    5 bits        ｜   9 bits        ｜           ｜</span><br><span class="line">-------------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+<p>如果 fb 等于0，说明元素为重复元素或者等差数列，对应的blob 会使用 zigzag 编码，存储第一个元素的值。接着会只存储等差值。</p>
+<p>如果 fb 不等于0，说明是第三种情况。blob 的数据使用 zigzag 编码，存储第一个元素的值。接着会存储相邻元素的差值。</p>
+<h3 id="Direct-编码"><a href="#Direct-编码" class="headerlink" title="Direct 编码"></a>Direct 编码</h3><p>如果元素的值，它们占用的 bit 位数，相差不大的话，就会采用 direct 编码。那么这个相差不大，是如何判断的。首先它会遍历元素，使用直方图统计出各个 bit 位数对应了多少个元素，如果第90%的元素所占用的 bit 位数，与最大值的元素所占用的 bit 位数相等，那么就认定为相差不大。direct 编码的格式为：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">------------------------------------------------------------------------</span><br><span class="line">  encoding type   |   每个值存储占用的位数  ｜   元素数目       ｜   blob   ｜     </span><br><span class="line">-------------------------------------------------------------------------</span><br><span class="line">  2 bits          |    5 bits           ｜   9 bits        ｜           ｜</span><br><span class="line">------------------------------------------------------------------------</span><br></pre></td></tr></table></figure>
+<p>direct 顾名思义，也就是直接编码。所以它仅仅是在存储单个值的时候，使用了 zigzag 编码。每个元素的值经过编码后，存储到 blob 里。</p>
+<h3 id="Patch-Base-编码"><a href="#Patch-Base-编码" class="headerlink" title="Patch Base 编码"></a>Patch Base 编码</h3><p>如果元素的分布范围比较大，无法使用 direct 编码时，那么就会使用 patch base 编码。</p>
+<p>首先它找出元素中的最小值，然后计算出各个元素与最小值之间的差值。然后计算出差值占用 bit 位数的分布情况，如果第 95% 的元素占用的 bits 位数与最大差值占用的 bit 位数不等的话，就会使用 patch base 编码。然后将数据分为前 95%和后5%两部分。根据前95%的元素，会推算出每个差值占用的存储数据位数。所以对于前95%的元素，可以直接存储。对于后面 5% 的元素，则还额外存储了高位数据。</p>
+<h2 id="Byte类型编码"><a href="#Byte类型编码" class="headerlink" title="Byte类型编码"></a>Byte类型编码</h2><p>对于字节类型的数据，编码方式比较简单，只是简单的合并重复值，也称为RLE算法。当重复值连续出现3次，才会触发该编码。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">----------------------------</span><br><span class="line">  control byte   |   blob  ｜      </span><br><span class="line">----------------------------</span><br><span class="line">  1 byte         |         ｜</span><br><span class="line">----------------------------</span><br></pre></td></tr></table></figure>
+<p>当 control byte 的值 小于 0时，表示没有重复值，表示后面数据的数目。后面的 blob 都是存储着数值列表。</p>
+<p>当 control byte 的值 大于等于 0时，表示有重复值，表示重复数据的数目。后面的 blob 都是存储着重复数。</p>
+<h2 id="字符串类型编码"><a href="#字符串类型编码" class="headerlink" title="字符串类型编码"></a>字符串类型编码</h2><p>对于字符串类型的数据，orc 提供了字典编码方式。字典编码的原理是，将去重后的字符串存到一个集合里，然后每行数据只需要记录，自身数据对应集合里的位置。这样对于有重复的字符串是非常高校的。比如有一列表示省份，我们知道省份也就只有30多个，如果该表有几千万行，那么每行只需要记录一个 id 号就行，极大的提高了压缩效率。不过要想触发字典编码，有个<code>orc.dictionary.key.threshold</code>配置项需要注意，默认为 0.8。表示只有去重的数据行数，低于总行数的占比，才能触发字典编码。</p>
 
       
     </div>
@@ -421,7 +403,7 @@
       
         <div class="post-tags">
           
-            <a href="/tags/项目感悟/" rel="tag"># 项目感悟</a>
+            <a href="/tags/orc/" rel="tag"># orc</a>
           
         </div>
       
@@ -434,8 +416,8 @@
         <div class="post-nav">
           <div class="post-nav-next post-nav-item">
             
-              <a href="/2020/05/06/postgresql-physical-replication/" rel="next" title="Postgresql 物理流复制">
-                <i class="fa fa-chevron-left"></i> Postgresql 物理流复制
+              <a href="/2020/09/10/postgresql-dynamic-hash/" rel="next" title="Postgresql 动态哈希表实现">
+                <i class="fa fa-chevron-left"></i> Postgresql 动态哈希表实现
               </a>
             
           </div>
@@ -444,8 +426,8 @@
 
           <div class="post-nav-prev post-nav-item">
             
-              <a href="/2020/08/24/mall-database-design/" rel="prev" title="数据库表设计思路">
-                数据库表设计思路 <i class="fa fa-chevron-right"></i>
+              <a href="/2020/10/18/apache-orc-structure/" rel="prev" title="Apache Orc 结构">
+                Apache Orc 结构 <i class="fa fa-chevron-right"></i>
               </a>
             
           </div>
@@ -591,7 +573,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#项目开发流程"><span class="nav-number">2.</span> <span class="nav-text">项目开发流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#自动化部署"><span class="nav-number">3.</span> <span class="nav-text">自动化部署</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#系统监控"><span class="nav-number">4.</span> <span class="nav-text">系统监控</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#重构与设计模式"><span class="nav-number">5.</span> <span class="nav-text">重构与设计模式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#开发进度"><span class="nav-number">6.</span> <span class="nav-text">开发进度</span></a></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据类型"><span class="nav-number">2.</span> <span class="nav-text">数据类型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#整数类型压缩"><span class="nav-number">3.</span> <span class="nav-text">整数类型压缩</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Short-Repeat-编码"><span class="nav-number">3.1.</span> <span class="nav-text">Short Repeat 编码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Delta-编码"><span class="nav-number">3.2.</span> <span class="nav-text">Delta 编码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Direct-编码"><span class="nav-number">3.3.</span> <span class="nav-text">Direct 编码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Patch-Base-编码"><span class="nav-number">3.4.</span> <span class="nav-text">Patch Base 编码</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Byte类型编码"><span class="nav-number">4.</span> <span class="nav-text">Byte类型编码</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#字符串类型编码"><span class="nav-number">5.</span> <span class="nav-text">字符串类型编码</span></a></li></ol></div>
             
 
           </div>

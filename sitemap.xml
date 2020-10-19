@@ -2,6 +2,27 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://zhmin.github.io/2019/02/21/spark-streaming-kafka/</loc>
+    
+    <lastmod>2020-10-19T03:26:21.574Z</lastmod>
+    
+  </url>
+  
+  <url>
+    <loc>https://zhmin.github.io/2020/10/18/apache-orc-compress/</loc>
+    
+    <lastmod>2020-10-19T02:24:15.073Z</lastmod>
+    
+  </url>
+  
+  <url>
+    <loc>https://zhmin.github.io/2020/10/18/apache-orc-structure/</loc>
+    
+    <lastmod>2020-10-19T02:24:15.073Z</lastmod>
+    
+  </url>
+  
+  <url>
     <loc>https://zhmin.github.io/2019/01/02/spark-on-yarn/</loc>
     
     <lastmod>2020-10-14T02:06:52.307Z</lastmod>
@@ -142,13 +163,6 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/02/21/spark-streaming-kafka/</loc>
-    
-    <lastmod>2020-09-25T01:58:36.199Z</lastmod>
-    
-  </url>
-  
-  <url>
     <loc>https://zhmin.github.io/2019/02/18/spark-streaming-job-flow/</loc>
     
     <lastmod>2020-09-25T01:58:36.198Z</lastmod>
@@ -170,14 +184,14 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/04/03/spark-sql-cdh/</loc>
+    <loc>https://zhmin.github.io/2019/07/11/spark-sql-expression/</loc>
     
     <lastmod>2020-09-25T01:58:36.195Z</lastmod>
     
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/07/11/spark-sql-expression/</loc>
+    <loc>https://zhmin.github.io/2019/04/03/spark-sql-cdh/</loc>
     
     <lastmod>2020-09-25T01:58:36.195Z</lastmod>
     
@@ -254,7 +268,7 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2020/04/09/shiro-subject/</loc>
+    <loc>https://zhmin.github.io/2020/04/14/shiro-session/</loc>
     
     <lastmod>2020-09-25T01:58:36.179Z</lastmod>
     
@@ -268,7 +282,7 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2020/04/14/shiro-session/</loc>
+    <loc>https://zhmin.github.io/2020/04/09/shiro-subject/</loc>
     
     <lastmod>2020-09-25T01:58:36.179Z</lastmod>
     
@@ -352,14 +366,14 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2020/05/06/postgresql-physical-replication/</loc>
+    <loc>https://zhmin.github.io/2019/10/15/postgresql-lwlock/</loc>
     
     <lastmod>2020-09-25T01:58:36.172Z</lastmod>
     
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/10/15/postgresql-lwlock/</loc>
+    <loc>https://zhmin.github.io/2020/05/06/postgresql-physical-replication/</loc>
     
     <lastmod>2020-09-25T01:58:36.172Z</lastmod>
     
@@ -394,14 +408,14 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/12/17/postgresql-c-function/</loc>
+    <loc>https://zhmin.github.io/2019/10/21/postgresql-buffer-replace/</loc>
     
     <lastmod>2020-09-25T01:58:36.168Z</lastmod>
     
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/10/21/postgresql-buffer-replace/</loc>
+    <loc>https://zhmin.github.io/2019/12/17/postgresql-c-function/</loc>
     
     <lastmod>2020-09-25T01:58:36.168Z</lastmod>
     
@@ -457,20 +471,6 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2020/08/17/mall-project-think/</loc>
-    
-    <lastmod>2020-09-25T01:58:36.161Z</lastmod>
-    
-  </url>
-  
-  <url>
-    <loc>https://zhmin.github.io/2020/08/24/mall-database-design/</loc>
-    
-    <lastmod>2020-09-25T01:58:36.161Z</lastmod>
-    
-  </url>
-  
-  <url>
     <loc>https://zhmin.github.io/2019/05/20/kafka-transaction/</loc>
     
     <lastmod>2020-09-25T01:58:36.160Z</lastmod>
@@ -478,14 +478,14 @@
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/03/28/kafka-timer/</loc>
+    <loc>https://zhmin.github.io/2019/04/23/kafka-schema-registry/</loc>
     
     <lastmod>2020-09-25T01:58:36.159Z</lastmod>
     
   </url>
   
   <url>
-    <loc>https://zhmin.github.io/2019/04/23/kafka-schema-registry/</loc>
+    <loc>https://zhmin.github.io/2019/03/28/kafka-timer/</loc>
     
     <lastmod>2020-09-25T01:58:36.159Z</lastmod>
     

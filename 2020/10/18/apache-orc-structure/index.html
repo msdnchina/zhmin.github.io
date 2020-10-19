@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="orc,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="前言最近看完了数据库的行式存储后，也想总结下列式存储。列式存储也有多种实现方式，这里挑选熟悉的存储格式 orc，它在hive里使用的比较多。本篇会先讲讲它的设计结构，然后结合源码来理解，中间还会讲述一些配置项的调优。orc 项目的代码地址为，这里吐槽下它的代码结构有点乱，看起来真的很费劲。 文件结构文件结构如下图所示，来自官方网站  整个文件分为 Stripe 数据部分，OrcTail 部分。Or">
+<meta name="keywords" content="orc">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Apache Orc 结构">
+<meta property="og:url" content="https://zhmin.github.io/2020/10/18/apache-orc-structure/index.html">
+<meta property="og:site_name" content="学习笔记">
+<meta property="og:description" content="前言最近看完了数据库的行式存储后，也想总结下列式存储。列式存储也有多种实现方式，这里挑选熟悉的存储格式 orc，它在hive里使用的比较多。本篇会先讲讲它的设计结构，然后结合源码来理解，中间还会讲述一些配置项的调优。orc 项目的代码地址为，这里吐槽下它的代码结构有点乱，看起来真的很费劲。 文件结构文件结构如下图所示，来自官方网站  整个文件分为 Stripe 数据部分，OrcTail 部分。Or">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://orc.apache.org/img/OrcFileLayout.png">
+<meta property="og:updated_time" content="2020-10-19T02:24:15.073Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Apache Orc 结构">
+<meta name="twitter:description" content="前言最近看完了数据库的行式存储后，也想总结下列式存储。列式存储也有多种实现方式，这里挑选熟悉的存储格式 orc，它在hive里使用的比较多。本篇会先讲讲它的设计结构，然后结合源码来理解，中间还会讲述一些配置项的调优。orc 项目的代码地址为，这里吐槽下它的代码结构有点乱，看起来真的很费劲。 文件结构文件结构如下图所示，来自官方网站  整个文件分为 Stripe 数据部分，OrcTail 部分。Or">
+<meta name="twitter:image" content="https://orc.apache.org/img/OrcFileLayout.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://zhmin.github.io/2020/10/18/apache-orc-structure/">
+
+
+
+
+
+  <title>Apache Orc 结构 | 学习笔记</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">学习笔记</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://zhmin.github.io/2020/10/18/apache-orc-structure/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="zhmin">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="学习笔记">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">Apache Orc 结构</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2020-10-18T22:44:06+08:00">
+                2020-10-18
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/orc/" itemprop="url" rel="index">
+                    <span itemprop="name">orc</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2020/10/18/apache-orc-structure/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2020/10/18/apache-orc-structure/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2020/10/18/apache-orc-structure/" class="leancloud_visitors" data-flag-title="Apache Orc 结构">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近看完了数据库的行式存储后，也想总结下列式存储。列式存储也有多种实现方式，这里挑选熟悉的存储格式 orc，它在hive里使用的比较多。本篇会先讲讲它的设计结构，然后结合源码来理解，中间还会讲述一些配置项的调优。orc 项目的代码地址为，这里吐槽下它的代码结构有点乱，看起来真的很费劲。</p>
+<h2 id="文件结构"><a href="#文件结构" class="headerlink" title="文件结构"></a>文件结构</h2><p>文件结构如下图所示，来自官方网站</p>
+<p><img src="https://orc.apache.org/img/OrcFileLayout.png"></p>
+<p>整个文件分为 Stripe 数据部分，OrcTail 部分。OrcTail 部分包含了整个文件的元数据，分为 PostScript 和 Footer 。PostScript  里面包含了压缩信息。Footer 包含列定义，和一些统计信息。比如多少行数据，每列的统计信息（最大值，最小值，总和值）。还包含了各个 Stripe 的信息。</p>
+<p>数据都被分割成一块块的，存储在每个 Stripe 里。每个Stripe 还包含了里面数据的统计信息和布隆过滤器，</p>
+<p>rowIndexStride 表示单个 索引项 RowIndex 的元素，最多包含的行数。</p>
+<p>具体内容可以参考 proto 文件，orc 使用了 protobuf 来定义这些数据。也可以参考官方文档。</p>
+<h2 id="数据交互单位"><a href="#数据交互单位" class="headerlink" title="数据交互单位"></a>数据交互单位</h2><p>再继续介绍数据的读写之前，需要详细介绍下，它对外接口提供的数据单位<code>VectorizedRowBatch</code>，它表示多行数据。它是将每列的数据单独存储。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">VectorizedRowBatch</span> </span>&#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">int</span> numCols;           <span class="comment">// 多少列</span></span><br><span class="line">    <span class="keyword">public</span> ColumnVector[] cols;   <span class="comment">// 每列的数据</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">int</span> size;   <span class="comment">// 行数</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ColumnVector</code>表示一列的数据，可以看作是一个数组。<code>ColumnVector</code>有多个子类，每个子类对应于一种数据类型。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 只包含一列的数据</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">abstract</span> <span class="class"><span class="keyword">class</span> <span class="title">ColumnVector</span> </span>&#123;   </span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">final</span> Type type;        <span class="comment">// 列类型</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">boolean</span>[] isNull;       <span class="comment">// 第几行的列数据是否为空值</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">boolean</span> noNulls;        <span class="comment">// 如果都没有空值，那么则为true</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">boolean</span> isRepeating;    <span class="comment">// 为true表示该列的值都是相同的，该值为列表的第一个值</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="列统计信息"><a href="#列统计信息" class="headerlink" title="列统计信息"></a>列统计信息</h2><p>对于列的统计信息，orc 会有不同范围的统计。有基于整个文件的统计，有基于 stripe 的统计，还有基于 stripe 中的 row group 的统计。这些统计信息由<code>ColumnStatistics</code>表示，它还有多个子类，每个子类对应一种数据类型。</p>
+<p><code>ColumnStatisticsImp</code>中存储了这些类型中相同的部分信息</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">abstract</span> <span class="class"><span class="keyword">class</span> <span class="title">ColumnStatisticsImp</span> </span>&#123;</span><br><span class="line">    <span class="keyword">protected</span> <span class="keyword">long</span> count = <span class="number">0</span>;   <span class="comment">// 非空值</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">boolean</span> hasNull = <span class="keyword">false</span>;  <span class="comment">// 是否存在空值</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">long</span> bytesOnDisk = <span class="number">0</span>;  <span class="comment">// 该列存储在磁盘的空间大小</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>下面以 int 类型为例，它还有独立的统计信息</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">message IntegerStatistics  &#123;</span><br><span class="line">  optional sint64 minimum = <span class="number">1</span>;    <span class="comment">// 最小值</span></span><br><span class="line">  optional sint64 maximum = <span class="number">2</span>;   <span class="comment">// 最大值</span></span><br><span class="line">  optional sint64 sum = <span class="number">3</span>;       <span class="comment">// 总和</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="数据写入"><a href="#数据写入" class="headerlink" title="数据写入"></a>数据写入</h2><p>在了解了文件结构之后，接下来就继续了解它是如何写的，这样才能进行一些针对性的调优。</p>
+<h3 id="数据写入流程"><a href="#数据写入流程" class="headerlink" title="数据写入流程"></a>数据写入流程</h3><p>整体写入过程不是很复杂，下面是相关源码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">addRowBatch</span><span class="params">(VectorizedRowBatch batch)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (buildIndex) &#123;</span><br><span class="line">        <span class="comment">// 如果创建索引，需要记录</span></span><br><span class="line">        <span class="keyword">int</span> posn = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">while</span> (posn &lt; batch.size) &#123;</span><br><span class="line">            <span class="comment">// 计算剩余的条数</span></span><br><span class="line">            <span class="keyword">int</span> chunkSize = Math.min(batch.size - posn, rowIndexStride - rowsInIndex);</span><br><span class="line">            <span class="comment">// 调用treeWriter将数据写入到缓存中</span></span><br><span class="line">            treeWriter.writeRootBatch(batch, posn, chunkSize);</span><br><span class="line">            <span class="comment">// 更新数据读取的位置</span></span><br><span class="line">            posn += chunkSize;</span><br><span class="line">            <span class="comment">// 记录写的行数</span></span><br><span class="line">            rowsInIndex += chunkSize;</span><br><span class="line">            rowsInStripe += chunkSize;</span><br><span class="line">            <span class="comment">// 每隔rowIndexStride条记录，就会创建一次索引创建</span></span><br><span class="line">            <span class="keyword">if</span> (rowsInIndex &gt;= rowIndexStride) &#123;</span><br><span class="line">                createRowIndexEntry();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        rowsInStripe += batch.size;</span><br><span class="line">        treeWriter.writeRootBatch(batch, <span class="number">0</span>, batch.size);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 检查内存是否有超出限制</span></span><br><span class="line">    previousAllocation = memoryManager.checkMemory(previousAllocation, <span class="keyword">this</span>);</span><br><span class="line">    checkMemory();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>是否需要创建索引由<code>orc.create.index</code>配置项指定，一般都是允许，这非常有利于优化读的优化。orc 创建的索引很明显是稀疏索引，它是每隔一定的行数，才会创建。这个阈值由<code>orc.row.index.stride</code>配置项指定，默认为 10000。如果我们需要更加稠密的索引，可以适当的将这个值调小。不过这会造成数据存储的一定程度增大。</p>
+<p>同样在添加完一个 batch 的数据之后，它每隔<code>orc.rows.between.memory.checks</code>条数据，就触发一次内存检查。查看该 stripe 的所占的内存是否超过了<code>orc.stripe.size</code>字节，超过了就会刷新该stripe，并且创建新的 stripe。不过这个触发是在每次添加完一个 batch 之后。所以如果我们想精确的控制 stripe 的大小，那么就需要控制每次 batch 的数据尽量小。</p>
+<p>对于内存控制，还有一个配置项<code>orc.memory.pool</code>，它表示写 orc 文件时，stripe 数据最多占用JVM Heap 空间的百分比，默认为50%。所以在设置 jvm 的 heap 值时，还需要集合<code>orc.stripe.size</code>考虑。</p>
+<h3 id="Stripe-跨-block-问题"><a href="#Stripe-跨-block-问题" class="headerlink" title="Stripe 跨 block 问题"></a>Stripe 跨 block 问题</h3><p>orc 在存储 stripe 时，会尽量保证 stripe 不会跨 block，。通常一个 block 会包含多个 stripe，如果新增的 stipe 不能完整的存储到一个 block 中，那么会添加空值填满该 block。这样 stipe 就能存储在下个 block了。</p>
+<p>block 大小由<code>orc.block.size</code>指定， <code>orc.block.padding</code>指定了是否允许添加空值。同时填充的空值空间大小由限制，为<code>orc.block.padding.tolerance * orc.stripe.size</code>。因为 hdfs 存储数据是以块为单位的，orc 存储也是基于 hadoop 环境产生的，为了在进行计算时，每个任务对应一个 block，如果 stripe 不跨域block 的话，那么就非常完美。一般来说<code>orc.block.size</code>值等于 hdfs 的 块值。</p>
+<h3 id="布隆过滤器"><a href="#布隆过滤器" class="headerlink" title="布隆过滤器"></a>布隆过滤器</h3><p>orc 不仅支持常见的数据统计，比如最大最小值，是否有空值等，用户在读取数据时，可以充分的利用这些信息来快速的过滤数据。它还支持布隆过滤器，这个过滤器只能判断某个值是否不存在。</p>
+<h2 id="数据读取"><a href="#数据读取" class="headerlink" title="数据读取"></a>数据读取</h2><h3 id="读取流程"><a href="#读取流程" class="headerlink" title="读取流程"></a>读取流程</h3><p>接下来就是文件读取的流程了。在读取开始时，会先读取文件的元数据。然后，依次读取 stripe 里的数据，结合 row group 索引，可以快速的过滤数据，提高读取性能。</p>
+<p>比如一个 int 类型的列，它对应的 row group 索引，包含了最大最小值，这样当遇到大于或者小于或者等于的时候，就可以快速得判断该区间的数据是否符合。</p>
+<p>除此之外还有布隆过滤器，当需要查找某个值是否不存在该集合里，就能快速的判断。</p>
+<h3 id="源码"><a href="#源码" class="headerlink" title="源码"></a>源码</h3><p>读取操作从<code>ReaderImpl</code>类开始，它在读取完整个文件的元数据后，就会调用<code>rows</code>返回<code>RecordReader</code>，负责读取里面的数据。</p>
+<p><code>RecordReader</code>的提供了<code>nextBatch</code>方法，负责实际的数据数据。读取流程如下：</p>
+<ol>
+<li><code>readStripe</code>方法，会读取该 stipe 的索引，计算哪些 rowgroup 需要读取。</li>
+<li><code>pickRowGroups</code>负责根据 row group 索引和 布隆过滤器，选择需要遍历的 row group。</li>
+<li><code>advanceToNextRow</code>方法，实现了利用 row group 索引，来快速的过滤行。</li>
+</ol>
+<p>我们在读取数据之前，需要设置<code>SearchArgument</code>过滤条件，才能充分利用这些索引。还需要注意下，orc 只会过滤那些 row group，里面的数据完全不符合条件的。所以返回的数据，还需要我们再过滤一次。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/orc/" rel="tag"># orc</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/10/18/apache-orc-compress/" rel="next" title="Apache Orc 压缩原理">
+                <i class="fa fa-chevron-left"></i> Apache Orc 压缩原理
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">zhmin</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">84</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">73</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#文件结构"><span class="nav-number">2.</span> <span class="nav-text">文件结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据交互单位"><span class="nav-number">3.</span> <span class="nav-text">数据交互单位</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#列统计信息"><span class="nav-number">4.</span> <span class="nav-text">列统计信息</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据写入"><span class="nav-number">5.</span> <span class="nav-text">数据写入</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#数据写入流程"><span class="nav-number">5.1.</span> <span class="nav-text">数据写入流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Stripe-跨-block-问题"><span class="nav-number">5.2.</span> <span class="nav-text">Stripe 跨 block 问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#布隆过滤器"><span class="nav-number">5.3.</span> <span class="nav-text">布隆过滤器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据读取"><span class="nav-number">6.</span> <span class="nav-text">数据读取</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#读取流程"><span class="nav-number">6.1.</span> <span class="nav-text">读取流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#源码"><span class="nav-number">6.2.</span> <span class="nav-text">源码</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zhmin</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
